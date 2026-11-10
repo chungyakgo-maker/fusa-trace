@@ -97,7 +97,7 @@ jobs:
           {
             echo "## 업데이트 설치 확인"
             echo '```'
-            grep -E '^(✓|✗)|확인 (통과|실패)' update.txt || true
+            grep -E '^(✓|✗|- )|확인 (통과|실패)' update.txt || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 

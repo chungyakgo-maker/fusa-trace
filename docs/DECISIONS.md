@@ -125,3 +125,6 @@ SPEC·FORMATS와 다르게 하거나, 문서에 없던 것을 정한 내용을 �
 - **설치 폴더는 `%LOCALAPPDATA%\Programs\fusa-trace`**: electron-builder의 사용자 단위 원클릭 설치는 제품 이름이 아니라 패키지 이름 폴더를 씀
   (업데이트 설치 확인 테스트로 발견, README의 "FuSa Trace" 폴더 안내를 고침). 제거 프로그램 이름은 `Uninstall FuSaTrace.exe`
   (`win.executableName`을 따름) → 앱의 설치형 판별은 이름 대신 "실행 파일 옆에 `Uninstall *.exe`가 있음"으로 봄
+- **설치 프로그램은 탐색기를 통해 앱을 다시 켬** (`--force-run` → `ExecShellAsUser`): 다시 켜진 앱은 보통 실행과 같은 환경으로 뜸.
+  그래서 Windows CI의 업데이트 설치 확인은 "예전 설치 폴더가 지워지고 새 파일이 깔렸는지"(표시 파일·지운 파일)와 "FuSaTrace.exe가 다시 실행 중인지"로 봄
+- **`nsis.deleteAppDataOnUninstall`은 계속 false**: 업데이트 때 예전 버전 제거 프로그램이 돌기 때문에, 이 값을 켜면 데이터 폴더(`%APPDATA%\FuSaTrace`)가 지워질 수 있음

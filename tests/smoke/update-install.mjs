@@ -8,7 +8,7 @@
 import { _electron as electron } from 'playwright-core'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -26,7 +26,6 @@ const installDir = join(process.env.LOCALAPPDATA ?? '', 'Programs', 'fusa-trace'
 const exe = join(installDir, 'FuSaTrace.exe')
 const listDir = () => (existsSync(installDir) ? readdirSync(installDir) : [])
 const uninstallerName = () => listDir().find((f) => /^Uninstall .+\.exe$/i.test(f))
-const uninstallerPath = () => join(installDir, uninstallerName() ?? 'Uninstall FuSaTrace.exe')
 const locate = () => existsSync(exe) && Boolean(uninstallerName())
 function diagnose(installMs, exitInfo) {
   console.log('--- 진단 ---')
@@ -66,7 +65,21 @@ if (!installed) {
   console.error('\n업데이트 설치 확인 실패: 설치 폴더가 없음')
   process.exit(1)
 }
-const firstInstall = statSync(uninstallerPath()).mtimeMs
+
+// 덮어 설치 확인용 표시: 업데이트 때 예전 설치 폴더는 통째로 지워지고 새 파일이 깔린다
+// (NSIS는 파일 시각을 빌드 때 시각으로 남겨서 시각으로는 알 수 없음)
+const marker = join(installDir, 'update-check-marker.txt')
+writeFileSync(marker, 'old install')
+const removedFile = ['LICENSE.electron.txt', 'LICENSES.chromium.html'].map((f) => join(installDir, f)).find((f) => existsSync(f))
+if (removedFile) rmSync(removedFile)
+const tasklist = (image) => {
+  try {
+    return execFileSync('tasklist', ['/FI', `IMAGENAME eq ${image}`, '/NH'], { encoding: 'utf-8' })
+  } catch {
+    return ''
+  }
+}
+const appRunning = () => /FuSaTrace\.exe/i.test(tasklist('FuSaTrace.exe'))
 
 // 2) 가짜 GitHub: v99.0.0 = 같은 Setup.exe
 const bytes = readFileSync(setupPath)
@@ -101,7 +114,6 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
 
 const dataDir = mkdtempSync(join(tmpdir(), 'fusa-update-'))
 const logFile = join(dataDir, 'logs', 'app.log')
-const starts = () => (existsSync(logFile) ? (readFileSync(logFile, 'utf-8').match(/\] start v/g) ?? []).length : 0)
 
 const app = await electron.launch({
   executablePath: exe,
@@ -128,11 +140,17 @@ try {
   check(false, '설치형 업데이트 확인 중 오류', error instanceof Error ? error.message : String(error))
 }
 
-// 3) 설치 프로그램이 덮어 설치하고 앱을 다시 켰는지: 로그의 "start" 기록이 2번 + 제거 프로그램이 새로 만들어짐
-check(await waitFor(() => starts() >= 2, 240_000), '설치형: 조용히 덮어 설치한 뒤 앱이 다시 켜짐', `시작 기록 ${starts()}번`)
-check(existsSync(uninstallerPath()) && statSync(uninstallerPath()).mtimeMs > firstInstall, '설치형: 덮어 설치됨 (제거 프로그램을 새로 씀)')
+// 3) 설치 프로그램이 예전 설치를 지우고 새로 깔았는지 (표시 파일이 사라지고, 지운 파일이 돌아옴)
+const reinstalled = await waitFor(() => !existsSync(marker) && existsSync(exe) && (!removedFile || existsSync(removedFile)), 240_000)
+check(reinstalled, '설치형: 조용히 덮어 설치됨 (예전 설치를 지우고 새 파일을 깖)', listDir().slice(0, 6).join(', '))
 const logText = existsSync(logFile) ? readFileSync(logFile, 'utf-8') : ''
 check(logText.includes('update: installing'), '설치형: 앱 로그에 업데이트 설치 기록')
+
+// 4) 설치 프로그램은 탐색기(explorer.exe)를 통해 앱을 다시 켠다 → 이 테스트의 환경 변수와 상관없이 보통 실행으로 켜짐
+const hasExplorer = /explorer\.exe/i.test(tasklist('explorer.exe'))
+const relaunched = await waitFor(appRunning, 90_000)
+if (relaunched || hasExplorer) check(relaunched, '설치형: 설치가 끝나면 앱이 다시 켜짐')
+else console.log('- 설치형: 앱 다시 켜짐은 확인하지 않음 (이 CI 컴퓨터에 탐색기가 없음. 설치 프로그램은 탐색기를 통해 앱을 켬)')
 
 try {
   execFileSync('taskkill', ['/IM', 'FuSaTrace.exe', '/F'], { stdio: 'ignore' })
