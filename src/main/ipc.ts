@@ -9,12 +9,21 @@ import { IPC, type AppInfo, type ExportResult, type ReadRequest, type SaveResult
 import { ProjectStore } from './store'
 import { previewFile, readDocuments } from './documents'
 import { log } from './log'
+import type { Updater } from './updater'
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-export function registerIpc(store: ProjectStore, logFile: string): void {
+export function registerIpc(store: ProjectStore, logFile: string, updater: Updater): void {
+  ipcMain.handle(IPC.updateGet, () => updater.getState())
+  ipcMain.handle(IPC.updateCheck, () => updater.check(false))
+  ipcMain.handle(IPC.updateDownload, () => updater.download())
+  ipcMain.handle(IPC.updateInstall, () => updater.install())
+  ipcMain.handle(IPC.updateSetAuto, (_e, on: unknown) => updater.setAutoCheck(on === true))
+  ipcMain.handle(IPC.updateOpenPage, () => updater.openReleasePage())
+  ipcMain.handle(IPC.updateShowFile, () => updater.showDownloaded())
+
   ipcMain.handle(IPC.projectsList, () => store.list())
 
   ipcMain.handle(IPC.projectsCreate, (_e, name: string) => {

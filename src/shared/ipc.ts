@@ -1,6 +1,7 @@
 /** 화면(renderer) ↔ 앱 본체(main) 사이에 주고받는 기능 목록 */
 import type { DocKind, IsoDate, ParsedDocument, Project, ProjectSummary, ReadOptions } from '../core/model'
 import type { PreviewData } from '../core/rules'
+import type { UpdateState } from '../core/update'
 
 export const IPC = {
   projectsList: 'projects:list',
@@ -14,7 +15,16 @@ export const IPC = {
   docsPreview: 'docs:preview',
   exportSchedule: 'export:schedule',
   showInFolder: 'shell:showInFolder',
-  appInfo: 'app:info'
+  appInfo: 'app:info',
+  updateGet: 'update:get',
+  updateCheck: 'update:check',
+  updateDownload: 'update:download',
+  updateInstall: 'update:install',
+  updateSetAuto: 'update:setAuto',
+  updateOpenPage: 'update:openPage',
+  updateShowFile: 'update:showFile',
+  /** 앱 본체 → 화면: 업데이트 상태가 바뀜 */
+  updateState: 'update:state'
 } as const
 
 export interface SaveResult {
@@ -65,4 +75,16 @@ export interface FusaApi {
   exportSchedule(project: Project, today: IsoDate, options: { includeTrace: boolean }): Promise<ExportResult>
   showInFolder(path: string): Promise<void>
   appInfo(): Promise<AppInfo>
+  /** 업데이트 (GitHub Release). 접속은 앱 본체의 업데이트 전용 연결만 함 */
+  update: {
+    get(): Promise<UpdateState>
+    check(): Promise<UpdateState>
+    download(): Promise<UpdateState>
+    install(): Promise<UpdateState>
+    setAutoCheck(on: boolean): Promise<UpdateState>
+    openPage(): Promise<void>
+    showFile(): Promise<void>
+    /** 상태가 바뀔 때마다 부름. 돌려준 함수를 부르면 그만 받음 */
+    onState(callback: (state: UpdateState) => void): () => void
+  }
 }

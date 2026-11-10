@@ -13,6 +13,7 @@ import { IdMapPage } from './IdMapPage'
 import { ProjectPicker } from './ProjectPicker'
 import { Modal, ToastProvider, useToast } from './ui'
 import { pendingReviewCount } from './traceView'
+import { UpdateBanner, useUpdateState } from './Update'
 
 export function App(): ReactElement {
   return (
@@ -24,6 +25,7 @@ export function App(): ReactElement {
 
 function Shell(): ReactElement {
   const toast = useToast()
+  const updateState = useUpdateState()
   const [project, setProject] = useState<Project | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [page, setPage] = useState<PageId>('schedule')
@@ -168,9 +170,9 @@ function Shell(): ReactElement {
         )}
 
         <div className="sidebar-footer">
-          <span className="offline-badge">
+          <span className="offline-badge" title="문서·프로젝트 내용은 밖으로 보내지 않습니다. 외부 접속은 업데이트 확인(GitHub)만 합니다.">
             <OfflineIcon />
-            외부 연결 없음
+            외부 연결: 업데이트만
           </span>
           <span className="version" data-testid="app-version">
             v{__APP_VERSION__}
@@ -179,6 +181,7 @@ function Shell(): ReactElement {
       </nav>
 
       <main className="main">
+        <UpdateBanner state={updateState} />
         <header className="page-header">
           <div>
             <div className="muted small">

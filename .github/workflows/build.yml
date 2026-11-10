@@ -90,6 +90,17 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: 업데이트 설치 확인 (설치형 설치 → 앱에서 업데이트 → 다시 켜짐)
+        run: |
+          set -o pipefail
+          node tests/smoke/update-install.mjs 2>&1 | tee update.txt
+          {
+            echo "## 업데이트 설치 확인"
+            echo '```'
+            grep -E '^(✓|✗)|확인 (통과|실패)' update.txt || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: 파일 목록
         run: |
           {
@@ -180,8 +191,9 @@ jobs:
           | \`FuSaTrace-${v}-win-x64.zip\` | 원하는 폴더에 압축을 풀고 \`FuSaTrace.exe\` 실행. 위 두 가지가 막힐 때 사용합니다. |
 
           - 코드 서명이 없는 파일이라 처음 실행할 때 "Windows의 PC 보호" 창이 뜨면 **추가 정보 → 실행**을 누르세요.
-          - 앱은 인터넷에 연결하지 않습니다 (자동 업데이트·통계 수집 없음).
-          - \`SHA256SUMS.txt\`: 파일이 손상되지 않았는지 확인하는 값입니다.
+          - 앱은 업데이트 확인(GitHub) 말고는 인터넷에 연결하지 않습니다. 문서·프로젝트 내용은 보내지 않고, 통계 수집도 없습니다.
+          - v0.6.0부터는 앱의 **설정 → 업데이트**에서 새 버전을 확인하고 받을 수 있습니다 (앱을 켤 때 자동 확인, 설정에서 끌 수 있음).
+          - \`SHA256SUMS.txt\`: 파일이 손상되지 않았는지 확인하는 값입니다. 앱의 업데이트도 이 값과 맞을 때만 설치합니다.
           EOF
           gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \

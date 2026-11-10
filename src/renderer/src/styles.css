@@ -1694,3 +1694,67 @@ input[type='date'] {
   min-width: 24px;
   min-height: 24px;
 }
+
+/* ───────── 업데이트 */
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid #c9d6f5;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--text-2);
+}
+.update-banner > svg {
+  flex: none;
+  color: var(--accent);
+}
+.update-banner-error {
+  border-color: #f2c6b0;
+  background: var(--late-soft);
+}
+.update-banner-error > svg {
+  color: var(--late);
+}
+.update-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+.update-banner-actions,
+.update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.update-actions {
+  margin: 8px 0 10px;
+}
+.update-progress {
+  width: 180px;
+  height: 8px;
+  accent-color: var(--accent);
+}
+.update-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 0;
+}
+.release-notes {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.check-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 4px;
+}

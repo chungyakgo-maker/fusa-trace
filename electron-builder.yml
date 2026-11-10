@@ -25,7 +25,8 @@ asar: true
 npmRebuild: false # 네이티브 모듈 없음
 electronLanguages: [ko, en-US]
 
-# 자동 업데이트 없음: 업데이트 서버 정보를 넣지 않는다
+# electron-updater는 쓰지 않는다: 앱이 GitHub Release를 직접 확인하고 SHA256SUMS.txt로 확인한 뒤 설치 프로그램을 실행
+# (src/main/updater.ts). 그래서 업데이트 서버 정보(latest.yml 등)는 만들지 않음
 publish: null
 
 win:

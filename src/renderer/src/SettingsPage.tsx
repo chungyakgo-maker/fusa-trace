@@ -1,4 +1,4 @@
-/** 설정 (SPEC §9.5): 프로젝트 이름, 오늘 기준일, 마일스톤, 칸 이름 동의어, 칸 지정 규칙 */
+/** 설정 (SPEC §9.5): 프로젝트 이름, 오늘 기준일, 마일스톤, 칸 이름 동의어, 칸 지정 규칙, 업데이트 */
 import { useEffect, useState, type ReactElement } from 'react'
 import type { Project } from '../../core/model'
 import { DOC_KIND_LABEL } from '../../core/model'
@@ -8,6 +8,7 @@ import { normHeader } from '../../core/text'
 import { localToday } from '../../core/dates'
 import type { AppInfo } from '../../shared/ipc'
 import { PlusIcon, TrashIcon } from './icons'
+import { UpdateSection } from './Update'
 
 export function SettingsPage({ project, onChange }: { project: Project; onChange: (p: Project) => void }): ReactElement {
   const [info, setInfo] = useState<AppInfo | null>(null)
@@ -168,6 +169,8 @@ export function SettingsPage({ project, onChange }: { project: Project; onChange
         <p className="muted small">규칙을 지워도 이미 넣은 문서는 그대로입니다. 다시 읽으려면 문서를 다시 넣어 주세요.</p>
       </section>
 
+      <UpdateSection />
+
       <section className="panel pad-panel" aria-labelledby="s-info">
         <h2 id="s-info">앱 정보</h2>
         <dl className="info-list">
@@ -178,7 +181,7 @@ export function SettingsPage({ project, onChange }: { project: Project; onChange
           <dt>로그 파일</dt>
           <dd className="mono small">{info?.logFile ?? '-'} (문서 내용은 기록하지 않음)</dd>
           <dt>인터넷 연결</dt>
-          <dd>사용하지 않음 (자동 업데이트·통계 수집 없음)</dd>
+          <dd>업데이트 확인·받기만 (GitHub). 문서·프로젝트 내용은 보내지 않음, 통계 수집 없음</dd>
         </dl>
       </section>
     </div>

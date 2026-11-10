@@ -9,13 +9,16 @@
 //   - FMEA + SRS → FMEA 근거, 소프트웨어 탭(지도·역방향 확인), ID 대응표(SRS 참조), 엑셀 시트 3
 //   - 처음 보는 양식: HSR 칸 지정 → 하드웨어 탭 연결, 같은 모양 자동, SW 시험 명세 칸 지정, 동의어 추가
 //   - 대량(TSR 320개): 읽기 시간, 지도 모두 펼치기·카드 누르기·탭 전환 시간
+//   - 업데이트: 가짜 GitHub(내 PC)로 자동 확인·버전 확인·받기·확인값 불일치·업데이트 연결 차단 범위
 //   - 화면 캡처 저장 (Actions 아티팩트로 올림)
 //
 // 사용법
 //   npm run build && npm run smoke                       ← out/ 폴더의 앱을 실행
 //   SMOKE_EXE=dist/win-unpacked/FuSaTrace.exe npm run smoke  ← 설치 파일과 같은 exe를 실행 (Actions)
 import { _electron as electron } from 'playwright-core'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { createServer } from 'node:http'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -40,6 +43,44 @@ function check(ok, message, detail) {
   if (!ok) failures++
 }
 
+// ── 가짜 GitHub (업데이트 확인용, 내 PC의 127.0.0.1에서만). mode: current = 최신, new = v99.0.0, badhash = 확인값이 틀림
+const fakeGithub = { mode: 'current', hits: [] }
+const NEW_VERSION = '99.0.0'
+const fakeAssets = {
+  [`FuSaTrace-${NEW_VERSION}-Setup.exe`]: Buffer.from('fake setup'),
+  [`FuSaTrace-${NEW_VERSION}-Portable.exe`]: Buffer.from('fake portable'),
+  [`FuSaTrace-${NEW_VERSION}-win-x64.zip`]: Buffer.from(`fake zip ${'x'.repeat(300_000)}`)
+}
+const sha256 = (b) => createHash('sha256').update(b).digest('hex')
+const githubServer = createServer((req, res) => {
+  fakeGithub.hits.push(req.url)
+  const base = `http://127.0.0.1:${githubServer.address().port}`
+  const url = decodeURIComponent(req.url ?? '')
+  if (url === '/latest') {
+    const v = fakeGithub.mode === 'current' ? version : NEW_VERSION
+    const assets = Object.entries(fakeAssets).map(([name, b]) => ({ name: name.replace(NEW_VERSION, v), browser_download_url: `${base}/dl/${name.replace(NEW_VERSION, v)}`, size: b.length }))
+    assets.push({ name: 'SHA256SUMS.txt', browser_download_url: `${base}/dl/SHA256SUMS.txt`, size: 300 })
+    res.setHeader('content-type', 'application/json')
+    return res.end(JSON.stringify({ tag_name: `v${v}`, html_url: `${base}/page`, published_at: '2026-11-10T00:00:00Z', body: '가짜 Release 설명', assets }))
+  }
+  if (url === '/dl/SHA256SUMS.txt') return res.end(Object.entries(fakeAssets).map(([n, b]) => `${fakeGithub.mode === 'badhash' ? '0'.repeat(64) : sha256(b)}  ${n}`).join('\n'))
+  const dl = /^\/dl\/(.+)$/.exec(url)
+  if (dl) {
+    // GitHub처럼 다른 주소로 한 번 넘겨 줌
+    res.writeHead(302, { location: `/blob/${encodeURIComponent(dl[1])}` })
+    return res.end()
+  }
+  const blob = /^\/blob\/(.+)$/.exec(url)
+  if (blob && fakeAssets[blob[1]]) {
+    res.writeHead(200, { 'content-length': fakeAssets[blob[1]].length, 'content-type': 'application/octet-stream' })
+    return res.end(fakeAssets[blob[1]])
+  }
+  res.writeHead(404)
+  res.end()
+})
+await new Promise((resolve) => githubServer.listen(0, '127.0.0.1', resolve))
+const downloadDir = mkdtempSync(join(tmpdir(), 'fusa-dl-'))
+
 const args = [`--log-net-log=${netLogPath}`]
 if (process.platform === 'linux') args.push('--no-sandbox')
 if (!exe) args.push('.')
@@ -48,7 +89,13 @@ const started = Date.now()
 const app = await electron.launch({
   executablePath: exe,
   args,
-  env: { ...process.env, FUSA_SMOKE: '1', FUSA_DATA_DIR: dataDir },
+  env: {
+    ...process.env,
+    FUSA_SMOKE: '1',
+    FUSA_DATA_DIR: dataDir,
+    FUSA_UPDATE_API: `http://127.0.0.1:${githubServer.address().port}/latest`,
+    FUSA_DOWNLOAD_DIR: downloadDir
+  },
   timeout: 60_000
 })
 
@@ -316,6 +363,48 @@ try {
   check(synText.includes('FSR 2'), '설정: 동의어를 추가하면 처음 보는 머리글의 FSR도 읽음')
   await win.getByRole('button', { name: '취소' }).click()
 
+  // ── 업데이트 (가짜 GitHub). 지금 설정 화면
+  const updStatus = (text, timeout = 30_000) =>
+    win.waitForFunction((t) => document.querySelector('[data-testid="update-status"]')?.textContent?.includes(t), text, { timeout })
+  const banner = win.getByRole('region', { name: '업데이트 알림' })
+  check(fakeGithub.hits.includes('/latest'), '업데이트: 앱을 켜면 자동으로 새 버전 확인', `${fakeGithub.hits.length}번 접속`)
+  await updStatus('최신 버전입니다')
+  check((await banner.count()) === 0, '업데이트: 최신이면 "최신 버전입니다", 알림 띠 없음')
+  fakeGithub.mode = 'new'
+  await win.getByRole('button', { name: '버전 확인' }).click()
+  await updStatus(`새 버전 v${NEW_VERSION}`)
+  check((await banner.innerText()).includes(`v${NEW_VERSION}`), '업데이트: [버전 확인] → 새 버전이 있으면 위쪽 알림 띠')
+  await win.screenshot({ path: screenshotPath.replace(/\.png$/, '-update.png') })
+  await win.locator('.update-actions').getByRole('button', { name: '업데이트', exact: true }).click()
+  await updStatus('받았습니다')
+  const zipName = `FuSaTrace-${NEW_VERSION}-win-x64.zip`
+  const savedZip = join(downloadDir, zipName)
+  check(existsSync(savedZip) && readFileSync(savedZip).equals(fakeAssets[zipName]), '업데이트: [업데이트] → 확인값(SHA256)이 맞는 새 파일을 다운로드 폴더에 받음 (압축본)')
+  check((await banner.innerText()).includes('다운로드 폴더'), '업데이트: 알림 띠에 받은 뒤 할 일 안내')
+
+  rmSync(savedZip)
+  fakeGithub.mode = 'badhash'
+  await win.getByRole('button', { name: '버전 확인' }).click()
+  await updStatus(`새 버전 v${NEW_VERSION}`)
+  await win.locator('.update-actions').getByRole('button', { name: '업데이트', exact: true }).click()
+  await updStatus('확인값(SHA256)')
+  check(!existsSync(savedZip) && !existsSync(`${savedZip}.part`), '업데이트: 확인값이 다르면 받은 파일을 지우고 이유 표시')
+
+  const updateFetch = await app.evaluate(async ({ session }) => {
+    try {
+      await session.fromPartition('fusa-update').fetch('https://example.com/')
+      return 'reached'
+    } catch {
+      return 'blocked'
+    }
+  })
+  check(updateFetch === 'blocked', '업데이트 연결도 GitHub 말고 다른 곳은 차단', updateFetch)
+
+  fakeGithub.mode = 'current'
+  await win.getByRole('button', { name: '버전 확인' }).click()
+  await updStatus('최신 버전입니다')
+  check((await banner.count()) === 0, '업데이트: 다시 최신이면 알림 띠가 사라짐')
+
   // ── 대량: 새 프로젝트에 FSR + 대용량 TSC (본문 XML 약 20MB, TSR 320개)
   await win.getByRole('button', { name: /^프로젝트:/ }).click()
   await win.getByLabel('새 프로젝트 이름 (차종·제어기)').fill('대용량 확인')
@@ -422,6 +511,7 @@ try {
   check(false, '실행 확인 중 오류', error instanceof Error ? error.message : String(error))
 } finally {
   await app.close()
+  githubServer.close()
 }
 
 // Chromium 네트워크 기록: 앱 코드의 요청 차단기에 보이지 않는 요청까지 모두 남는다

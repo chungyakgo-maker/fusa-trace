@@ -24,7 +24,21 @@ const api: FusaApi = {
   },
   exportSchedule: (project, today, options) => ipcRenderer.invoke(IPC.exportSchedule, project, today, options),
   showInFolder: (path) => ipcRenderer.invoke(IPC.showInFolder, path),
-  appInfo: () => ipcRenderer.invoke(IPC.appInfo)
+  appInfo: () => ipcRenderer.invoke(IPC.appInfo),
+  update: {
+    get: () => ipcRenderer.invoke(IPC.updateGet),
+    check: () => ipcRenderer.invoke(IPC.updateCheck),
+    download: () => ipcRenderer.invoke(IPC.updateDownload),
+    install: () => ipcRenderer.invoke(IPC.updateInstall),
+    setAutoCheck: (on) => ipcRenderer.invoke(IPC.updateSetAuto, on),
+    openPage: () => ipcRenderer.invoke(IPC.updateOpenPage),
+    showFile: () => ipcRenderer.invoke(IPC.updateShowFile),
+    onState: (callback) => {
+      const listener = (_e: Electron.IpcRendererEvent, state: Parameters<typeof callback>[0]): void => callback(state)
+      ipcRenderer.on(IPC.updateState, listener)
+      return () => ipcRenderer.removeListener(IPC.updateState, listener)
+    }
+  }
 }
 
 contextBridge.exposeInMainWorld('fusa', api)

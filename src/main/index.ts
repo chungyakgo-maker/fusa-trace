@@ -4,6 +4,7 @@ import { isAllowedUrl, isAppPageUrl } from './security'
 import { initLog, log } from './log'
 import { ProjectStore } from './store'
 import { registerIpc } from './ipc'
+import { Updater } from './updater'
 
 // 개발 모드(npm run dev)에서만 electron-vite가 개발 서버 주소를 넣어 준다. 배포된 앱에서는 없음.
 const DEV_SERVER_URL = process.env['ELECTRON_RENDERER_URL']
@@ -12,8 +13,9 @@ const DEV_SERVER_URL = process.env['ELECTRON_RENDERER_URL']
 // (실행 확인 테스트는 FUSA_DATA_DIR로 임시 폴더를 씀)
 app.setPath('userData', process.env['FUSA_DATA_DIR'] || join(app.getPath('appData'), 'FuSaTrace'))
 
-// 프록시를 쓰지 않는다. 앱은 어떤 서버에도 접속하지 않는데, 기본값이면 Chromium이 Windows의
+// 프록시를 쓰지 않는다. 앱은 업데이트 확인 말고는 어떤 서버에도 접속하지 않는데, 기본값이면 Chromium이 Windows의
 // "프록시 자동 검색"(WPAD: 회사망에서 wpad 서버를 찾아 설정 파일을 받음)을 시도한다. 앱 준비 전에 정해야 한다.
+// (업데이트 전용 연결만 Windows 프록시 설정을 따름: src/main/updater.ts)
 app.commandLine.appendSwitch('no-proxy-server')
 
 // 실행 확인(smoke) 테스트에서만 요청 기록을 남긴다. 주소만 기록하고 문서 내용은 기록하지 않는다.
@@ -102,8 +104,10 @@ if (!app.requestSingleInstanceLock()) {
     const dataDir = app.getPath('userData')
     const logFile = initLog(dataDir)
     log('info', `start v${app.getVersion()}`)
-    registerIpc(new ProjectStore(dataDir), logFile)
+    const updater = new Updater(dataDir)
+    registerIpc(new ProjectStore(dataDir), logFile, updater)
     mainWindow = createWindow()
+    mainWindow.once('ready-to-show', () => updater.scheduleAutoCheck())
     mainWindow.on('closed', () => {
       mainWindow = null
     })
