@@ -3,9 +3,13 @@
  * 원본 문서의 내용은 넣을 때 읽은 결과만 저장하고, 연결·상태는 화면에서 매번 계산한다.
  */
 
-export type DocKind = 'DIA' | 'FSR' | 'TSC' | 'FMEA' | 'SRS' | 'VR' | 'OTHER'
+export type DocKind = 'DIA' | 'FSR' | 'TSC' | 'FMEA' | 'SRS' | 'HSR' | 'SWTEST' | 'FMEDA' | 'VR' | 'OTHER'
 
-export const DOC_KINDS: readonly DocKind[] = ['DIA', 'FSR', 'TSC', 'FMEA', 'SRS', 'VR', 'OTHER']
+export const DOC_KINDS: readonly DocKind[] = ['DIA', 'FSR', 'TSC', 'FMEA', 'SRS', 'HSR', 'SWTEST', 'FMEDA', 'VR', 'OTHER']
+
+/** 칸 지정(처음 보는 양식)으로 읽는 종류 */
+export const RULE_KINDS = ['HSR', 'SWTEST'] as const
+export type RuleKind = (typeof RULE_KINDS)[number]
 
 export const DOC_KIND_LABEL: Record<DocKind, string> = {
   DIA: 'DIA (개발 인터페이스 협약서)',
@@ -13,12 +17,15 @@ export const DOC_KIND_LABEL: Record<DocKind, string> = {
   TSC: 'TSC (기술안전개념서)',
   FMEA: 'FMEA',
   SRS: 'SRS (소프트웨어 요구사양서)',
+  HSR: 'HSR (하드웨어 안전 요구사항, 칸 지정)',
+  SWTEST: 'SW 요구사항 시험 명세 (칸 지정)',
+  FMEDA: 'FMEDA (작성 여부만)',
   VR: 'Verification Report (동료검토)',
   OTHER: '기타 문서'
 }
 
 /** 이 버전에서 내용까지 읽는 종류. 나머지는 파일 등록만 (일정 화면의 "등록 문서" 표시용) */
-export const CONTENT_READ_KINDS: readonly DocKind[] = ['DIA', 'FSR', 'TSC', 'FMEA', 'SRS']
+export const CONTENT_READ_KINDS: readonly DocKind[] = ['DIA', 'FSR', 'TSC', 'FMEA', 'SRS', 'HSR', 'SWTEST']
 
 /** 날짜 'YYYY-MM-DD' */
 export type IsoDate = string
@@ -169,10 +176,38 @@ export interface Milestone {
   date: IsoDate
 }
 
+/** 칸 지정에서 고르는 칸의 역할 */
+export type RuleRole = 'id' | 'ref' | 'title' | 'asil' | 'allocation' | 'status'
+
+/** 처음 보는 양식의 읽기 규칙 (FORMATS §13). 같은 모양의 문서는 다음부터 자동으로 이 규칙으로 읽음 */
+export interface ReadRule {
+  id: string
+  name: string
+  docKind: RuleKind
+  format: 'xlsx' | 'docx'
+  /** rows: 머리글 행 + 항목 행 / keyvalue: 표 하나 = 항목 하나 (첫 칸이 키) */
+  layout: 'rows' | 'keyvalue'
+  /** 역할 → 머리글(또는 키) 글자 (normHeader로 정리한 것) */
+  roles: Partial<Record<RuleRole, string>>
+  /** 엑셀: 시트 이름 (같은 이름이 있으면 그 시트, 없으면 머리글이 맞는 아무 시트) */
+  sheet?: string
+  createdAt: string
+}
+
 export interface ProjectSettings {
   /** 오늘 기준일 덮어쓰기 (없으면 실제 오늘) */
   todayOverride?: IsoDate
   milestones: Milestone[]
+  /** 칸 지정 규칙 */
+  readRules?: ReadRule[]
+  /** 사용자가 추가한 칸 이름 동의어 (의미 키 → 글자들) */
+  synonyms?: Record<string, string[]>
+}
+
+/** 문서 읽기 옵션 (작업 스레드로 넘김) */
+export interface ReadOptions {
+  rules?: ReadRule[]
+  synonyms?: Record<string, string[]>
 }
 
 export interface Project {
@@ -214,6 +249,8 @@ export interface ParsedDocument {
   dia?: DiaContent
   items?: TraceItem[]
   meta?: Record<string, string>
+  /** 칸 지정이 필요함 (처음 보는 양식) */
+  needsMapping?: boolean
   /** 읽는 데 걸린 시간 (ms) */
   elapsedMs: number
 }

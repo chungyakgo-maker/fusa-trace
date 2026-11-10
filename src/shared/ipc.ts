@@ -1,5 +1,6 @@
 /** 화면(renderer) ↔ 앱 본체(main) 사이에 주고받는 기능 목록 */
-import type { DocKind, IsoDate, ParsedDocument, Project, ProjectSummary } from '../core/model'
+import type { DocKind, IsoDate, ParsedDocument, Project, ProjectSummary, ReadOptions } from '../core/model'
+import type { PreviewData } from '../core/rules'
 
 export const IPC = {
   projectsList: 'projects:list',
@@ -10,6 +11,7 @@ export const IPC = {
   projectsDelete: 'projects:delete',
   docsPick: 'docs:pick',
   docsRead: 'docs:read',
+  docsPreview: 'docs:preview',
   exportSchedule: 'export:schedule',
   showInFolder: 'shell:showInFolder',
   appInfo: 'app:info'
@@ -55,8 +57,10 @@ export interface FusaApi {
     pick(): Promise<string[]>
     /** 끌어다 놓은 파일의 경로 */
     pathOf(file: File): string
-    /** 파일 읽기 (작업 스레드) */
-    read(requests: ReadRequest[]): Promise<ParsedDocument[]>
+    /** 파일 읽기 (작업 스레드). options: 칸 지정 규칙, 사용자 동의어 */
+    read(requests: ReadRequest[], options?: ReadOptions): Promise<ParsedDocument[]>
+    /** 칸 지정 화면용 미리보기 (작업 스레드) */
+    preview(path: string): Promise<PreviewData | { error: string }>
   }
   exportSchedule(project: Project, today: IsoDate, options: { includeTrace: boolean }): Promise<ExportResult>
   showInFolder(path: string): Promise<void>

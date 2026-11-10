@@ -9,6 +9,7 @@ import type { ImportReport, TraceItem } from './model'
 import { emptyReport } from './model'
 import type { DocxDocument } from './docx'
 import { cleanValue, isTbd, normHeader } from './text'
+import { SYNONYMS } from './headers'
 import { asilLevel, extractFsrRefs, markDuplicates, newItem, normalizeAllocation, normalizeStatus } from './ids'
 
 export interface TscParseResult {
@@ -17,20 +18,22 @@ export interface TscParseResult {
   report: ImportReport
 }
 
-/** 속성 키 → 표준 이름 (FORMATS §3.4) */
-const ATTR_KEYS: [string, readonly string[]][] = [
-  ['Element', ['element', 'name of functional block']],
-  ['Operating Mode', ['operating mode']],
-  ['Safe State', ['safe state', 'safety state']],
-  ['Safety Mechanism', ['safety mechanism', 'sm']],
-  ['FTTI', ['ftti', 'ftti / fthi', 'ftti/fthi', 'frti']],
-  ['Acceptance criteria', ['acceptance criteria', '허용기준']],
-  ['Status', ['status', '상태']]
-]
+/** 속성 키 → 표준 이름 (FORMATS §3.4, 사용자 동의어 포함) */
+function attrKeys(): [string, readonly string[]][] {
+  return [
+    ['Element', SYNONYMS.element],
+    ['Operating Mode', ['operating mode']],
+    ['Safe State', ['safe state', 'safety state', ...SYNONYMS.safeState]],
+    ['Safety Mechanism', SYNONYMS.sm],
+    ['FTTI', ['ftti', 'ftti / fthi', 'ftti/fthi', 'frti', ...SYNONYMS.ftti]],
+    ['Acceptance criteria', SYNONYMS.acceptance],
+    ['Status', ['status', '상태']]
+  ]
+}
 
 function attrName(key: string): string | undefined {
   const n = normHeader(key)
-  for (const [name, syn] of ATTR_KEYS) if (syn.includes(n)) return name
+  for (const [name, syn] of attrKeys()) if (syn.includes(n)) return name
   return undefined
 }
 

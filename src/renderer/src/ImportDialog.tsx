@@ -1,7 +1,8 @@
 /** 가져오기 결과 화면 (SPEC §6.4): 반영 전에 읽은 결과·건너뛴 행·경고·이전 버전과 비교를 보여 준다 */
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
-import type { DocKind, ImportReport, ParsedDocument, Project } from '../../core/model'
-import { DOC_KINDS, DOC_KIND_LABEL } from '../../core/model'
+import type { DocKind, ImportReport, ParsedDocument, Project, ReadOptions, ReadRule } from '../../core/model'
+import { DOC_KINDS, DOC_KIND_LABEL, RULE_KINDS } from '../../core/model'
+import { MappingEditor } from './MappingEditor'
 import { addDocument, activeDeliverables, diffWithPrevious, findSameFile, toSourceDoc, type VersionDiff } from '../../core/project'
 import { computeDocLinks } from '../../core/schedule'
 import { AlertIcon, FileIcon, LockIcon } from './icons'
@@ -19,8 +20,10 @@ export interface ApplyItem {
 }
 
 function defaultInclude(p: Project, parsed: ParsedDocument): boolean {
-  return parsed.ok && parsed.kind !== undefined && !findSameFile(p, parsed.hash)
+  return parsed.ok && parsed.kind !== undefined && !parsed.needsMapping && !findSameFile(p, parsed.hash)
 }
+
+const isRuleKind = (k: DocKind | undefined): boolean => k !== undefined && (RULE_KINDS as readonly string[]).includes(k)
 
 export function ReportView({ report }: { report: ImportReport }): ReactElement {
   const counts = Object.entries(report.counts)
@@ -111,18 +114,24 @@ export function ImportDialog({
   project,
   paths,
   onApply,
-  onClose
+  onClose,
+  onRuleSaved
 }: {
   project: Project
   paths: string[]
   onApply: (items: ApplyItem[]) => void
   onClose: () => void
+  /** 칸 지정 규칙을 프로젝트에 저장 */
+  onRuleSaved: (rule: ReadRule) => void
 }): ReactElement {
   const [entries, setEntries] = useState<Entry[] | null>(null)
+  const [rules, setRules] = useState<ReadRule[]>(project.settings.readRules ?? [])
+  const [mapping, setMapping] = useState<number | null>(null)
+  const options = (r: ReadRule[] = rules): ReadOptions => ({ rules: r, synonyms: project.settings.synonyms })
 
   useEffect(() => {
     let alive = true
-    void window.fusa.docs.read(paths.map((path) => ({ path }))).then((results) => {
+    void window.fusa.docs.read(paths.map((path) => ({ path })), options()).then((results) => {
       if (alive) setEntries(results.map((parsed) => ({ parsed, include: defaultInclude(project, parsed), reading: false })))
     })
     return () => {
@@ -132,10 +141,23 @@ export function ImportDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const rereadAs = async (index: number, kind: DocKind): Promise<void> => {
+  const rereadAs = async (index: number, kind: DocKind | undefined, withRules: ReadRule[] = rules): Promise<void> => {
+    const path = entries![index].parsed.path
     setEntries((list) => list && list.map((e, i) => (i === index ? { ...e, reading: true } : e)))
-    const [parsed] = await window.fusa.docs.read([{ path: entries![index].parsed.path, kind }])
+    const [parsed] = await window.fusa.docs.read([{ path, kind }], options(withRules))
     setEntries((list) => list && list.map((e, i) => (i === index ? { parsed, include: defaultInclude(project, parsed), reading: false } : e)))
+  }
+
+  /** 칸 지정 저장 → 이 파일과, 같은 묶음의 칸 지정이 필요한 파일을 다시 읽음 */
+  const saveRule = (index: number, rule: ReadRule): void => {
+    const next = [...rules, rule]
+    setRules(next)
+    onRuleSaved(rule)
+    setMapping(null)
+    entries!.forEach((e, k) => {
+      if (k === index) void rereadAs(k, rule.docKind, next)
+      else if (e.parsed.ok && (e.parsed.needsMapping || !e.parsed.kind)) void rereadAs(k, e.parsed.needsMapping ? e.parsed.kind : undefined, next)
+    })
   }
 
   // 반영했을 때 DIA 산출물과 어떻게 연결될지 미리 보기
@@ -246,6 +268,14 @@ export function ImportDialog({
                         <AlertIcon /> 이미 등록된 파일과 내용이 같습니다 ({same.importedAt.slice(0, 10)} 등록). 반영하지 않아도 됩니다.
                       </p>
                     )}
+                    {(p.needsMapping || (isRuleKind(p.kind) && !p.items?.length)) && (
+                      <div className="mapping-callout">
+                        <AlertIcon /> 처음 보는 양식입니다. 칸 역할을 정하면 읽을 수 있습니다.
+                        <button type="button" className="btn btn-small btn-primary" onClick={() => setMapping(i)}>
+                          칸 지정
+                        </button>
+                      </div>
+                    )}
                     <ReportView report={p.report} />
                     {diff && <DiffView diff={diff} />}
                     {linkPreview.get(i) && <p className="link-line">{linkPreview.get(i)}</p>}
@@ -255,6 +285,9 @@ export function ImportDialog({
             )
           })}
         </ul>
+      )}
+      {mapping !== null && entries && (
+        <MappingEditor entry={entries[mapping].parsed} onSave={(rule) => saveRule(mapping, rule)} onClose={() => setMapping(null)} />
       )}
     </Modal>
   )

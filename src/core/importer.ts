@@ -1,16 +1,17 @@
 /**
  * 문서 1개 읽기: DRM 검사 → 종류 판별 → 종류별 읽기 (SPEC §6, FORMATS §1·§2). 작업 스레드에서 실행.
  */
-import type { DocKind, ImportReport, ParsedDocument } from './model'
+import type { DocKind, ImportReport, ParsedDocument, ReadOptions, ReadRule } from './model'
 import { emptyReport } from './model'
 import { DRM_MESSAGE, UNREADABLE_MESSAGE, fileExtension, isVerificationReportName, sniffFile } from './sniff'
 import { type Workbook, readWorkbook } from './xlsx'
 import { type DocxDocument, isDocx, readDocx } from './docx'
 import { isDiaSheet, parseDia } from './dia'
-import { SYNONYMS } from './headers'
+import { SYNONYMS, setExtraSynonyms } from './headers'
 import { sheetHasHeader } from './headers'
 import { normHeader } from './text'
-import { versionFromFileName } from './filename'
+import { docTokens, versionFromFileName } from './filename'
+import { parseWithRule, previewDocx, previewWorkbook, ruleMatches, type PreviewData } from './rules'
 import { parseFsr } from './fsr'
 import { parseTsc } from './tsc'
 import { isFmeaSheet, parseFmea } from './fmea'
@@ -20,7 +21,8 @@ export type ReadResult = Omit<ParsedDocument, 'path' | 'hash' | 'size' | 'elapse
 
 const LATER_NOTE: Partial<Record<DocKind, string>> = {
   VR: 'Verification Report는 내용을 열지 않고 파일명으로만 작성 여부를 판단합니다.',
-  OTHER: '처음 보는 양식입니다. 칸 지정 기능은 M5부터 제공합니다. 지금은 파일 등록만 합니다.'
+  FMEDA: 'FMEDA는 양식이 정해지지 않아 파일 등록(작성 여부)만 합니다.',
+  OTHER: '기타 문서로 파일만 등록합니다 (산출물 일정의 "등록 문서"). HSR·SW 시험 명세라면 종류를 바꾸고 [칸 지정]을 해 주세요.'
 }
 
 function fail(fileName: string, errorKind: NonNullable<ReadResult['errorKind']>, error: string): ReadResult {
@@ -53,41 +55,71 @@ export function detectDocxKinds(doc: DocxDocument): DocKind[] {
   return kinds
 }
 
+type Opened = { wb?: Workbook; doc?: DocxDocument } | { error: ReadResult }
+
+function openDocument(fileName: string, bytes: Uint8Array): Opened {
+  const sniff = sniffFile(bytes)
+  if (sniff === 'DRM') return { error: fail(fileName, 'DRM', DRM_MESSAGE) }
+  if (sniff === 'UNKNOWN') return { error: fail(fileName, 'UNREADABLE', UNREADABLE_MESSAGE) }
+  if (sniff === 'OLE' && fileExtension(fileName) === 'doc') {
+    return { error: fail(fileName, 'UNSUPPORTED', '.doc(옛 워드 형식)는 읽을 수 없습니다. 워드에서 .docx로 저장한 뒤 넣어 주세요.') }
+  }
+  try {
+    if (sniff === 'ZIP' && isDocx(bytes)) return { doc: readDocx(bytes) }
+    return { wb: readWorkbook(bytes) }
+  } catch {
+    return { error: fail(fileName, 'UNREADABLE', UNREADABLE_MESSAGE) }
+  }
+}
+
+/** 칸 지정 화면용 미리보기 */
+export function previewDocument(fileName: string, bytes: Uint8Array): PreviewData | { error: string } {
+  const o = openDocument(fileName, bytes)
+  if ('error' in o) return { error: o.error.error ?? UNREADABLE_MESSAGE }
+  return o.wb ? previewWorkbook(o.wb) : previewDocx(o.doc!)
+}
+
+function readWithRule(fileName: string, rule: ReadRule, wb: Workbook | undefined, doc: DocxDocument | undefined, detectedKinds: DocKind[]): ReadResult {
+  const r = parseWithRule(rule, wb, doc)
+  return { fileName, ok: true, kind: rule.docKind, detectedKinds, version: versionFromFileName(fileName), report: r.report, items: r.items, meta: { rule: rule.id } }
+}
+
 /**
  * @param forcedKind 사람이 고른 종류 (판별 실패·애매할 때)
+ * @param options 칸 지정 규칙, 사용자 동의어
  */
-export function readDocument(fileName: string, bytes: Uint8Array, forcedKind?: DocKind): ReadResult {
+export function readDocument(fileName: string, bytes: Uint8Array, forcedKind?: DocKind, options: ReadOptions = {}): ReadResult {
+  setExtraSynonyms(options.synonyms)
+  const rules = options.rules ?? []
   const sniff = sniffFile(bytes)
   if (sniff === 'DRM') return fail(fileName, 'DRM', DRM_MESSAGE)
   if (sniff === 'UNKNOWN') return fail(fileName, 'UNREADABLE', UNREADABLE_MESSAGE)
-  const ext = fileExtension(fileName)
 
   // Verification Report: 파일명으로만 판단, 내용은 열지 않음 (FORMATS §12)
   if (isVerificationReportName(fileName) && (forcedKind === undefined || forcedKind === 'VR')) {
     return registerOnly(fileName, 'VR', ['VR'])
   }
 
-  let wb: Workbook | undefined
-  let doc: DocxDocument | undefined
-  if (sniff === 'OLE') {
-    if (ext === 'doc') return fail(fileName, 'UNSUPPORTED', '.doc(옛 워드 형식)는 읽을 수 없습니다. 워드에서 .docx로 저장한 뒤 넣어 주세요.')
-    try {
-      wb = readWorkbook(bytes)
-    } catch {
-      return fail(fileName, 'UNREADABLE', UNREADABLE_MESSAGE)
-    }
-  } else if (isDocx(bytes)) {
-    doc = readDocx(bytes)
-  } else {
-    try {
-      wb = readWorkbook(bytes)
-    } catch {
-      return fail(fileName, 'UNREADABLE', UNREADABLE_MESSAGE)
-    }
-  }
+  const opened = openDocument(fileName, bytes)
+  if ('error' in opened) return opened.error
+  const { wb, doc } = opened
 
   const detectedKinds = wb ? detectWorkbookKinds(wb) : doc ? detectDocxKinds(doc) : []
-  const kind = forcedKind ?? (detectedKinds.length === 1 ? detectedKinds[0] : undefined)
+
+  // 칸 지정 규칙: 내장 판별이 안 됐거나, 사람이 HSR·SW 시험을 골랐을 때
+  const ruleCandidates = forcedKind === 'HSR' || forcedKind === 'SWTEST' ? rules.filter((r) => r.docKind === forcedKind) : forcedKind === undefined && detectedKinds.length === 0 ? rules : []
+  const rule = ruleCandidates.find((r) => ruleMatches(r, wb, doc))
+  if (rule) return readWithRule(fileName, rule, wb, doc, detectedKinds)
+
+  // 파일명에 HSR·FMEDA가 있으면 그 종류로 (HSR은 칸 지정 필요)
+  const tokens = docTokens(fileName)
+  const nameKind: DocKind | undefined = detectedKinds.length === 0 ? (tokens.includes('HSR') ? 'HSR' : tokens.includes('FMEDA') ? 'FMEDA' : undefined) : undefined
+  const kind = forcedKind ?? (detectedKinds.length === 1 ? detectedKinds[0] : nameKind)
+  if (kind === 'HSR' || kind === 'SWTEST') {
+    const report = emptyReport()
+    report.notes.push('처음 보는 양식입니다. [칸 지정]으로 내 ID·위 단계 ID 칸을 정해 주세요. 정한 규칙은 같은 모양의 문서에 자동으로 다시 씁니다.')
+    return { fileName, ok: true, kind, detectedKinds: nameKind ? [nameKind] : detectedKinds, version: versionFromFileName(fileName), report, needsMapping: true }
+  }
   if (!kind) {
     const report = emptyReport()
     report.notes.push(

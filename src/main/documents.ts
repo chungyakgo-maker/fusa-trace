@@ -3,7 +3,8 @@ import { readFile, stat } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { basename } from 'node:path'
 import createImportWorker from './importWorker?nodeWorker'
-import type { ParsedDocument } from '../core/model'
+import type { ParsedDocument, ReadOptions } from '../core/model'
+import type { PreviewData } from '../core/rules'
 import { emptyReport } from '../core/model'
 import type { ReadRequest } from '../shared/ipc'
 import { log } from './log'
@@ -11,16 +12,17 @@ import { log } from './log'
 const TIMEOUT_MS = 120_000
 const MAX_SIZE = 300 * 1024 * 1024
 
-type WorkerReply = { ok: true; result: Omit<ParsedDocument, 'path' | 'hash' | 'size' | 'elapsedMs'> } | { ok: false; error: string }
+type WorkerReply<T> = { ok: true; result: T } | { ok: false; error: string }
+type ReadReply = WorkerReply<Omit<ParsedDocument, 'path' | 'hash' | 'size' | 'elapsedMs'>>
 
-function runWorker(fileName: string, bytes: Uint8Array, kind: ReadRequest['kind']): Promise<WorkerReply> {
+function runWorker<T>(job: { mode: 'read' | 'preview'; fileName: string; bytes: Uint8Array; kind?: ReadRequest['kind']; options?: ReadOptions }): Promise<WorkerReply<T>> {
   return new Promise((resolve) => {
-    const worker = createImportWorker({ workerData: { fileName, bytes, kind } })
+    const worker = createImportWorker({ workerData: job })
     const timer = setTimeout(() => {
       void worker.terminate()
       resolve({ ok: false, error: `읽는 데 ${TIMEOUT_MS / 1000}초가 넘게 걸려 멈췄습니다` })
     }, TIMEOUT_MS)
-    worker.once('message', (msg: WorkerReply) => {
+    worker.once('message', (msg: WorkerReply<T>) => {
       clearTimeout(timer)
       void worker.terminate()
       resolve(msg)
@@ -32,7 +34,17 @@ function runWorker(fileName: string, bytes: Uint8Array, kind: ReadRequest['kind'
   })
 }
 
-export async function readDocuments(requests: ReadRequest[]): Promise<ParsedDocument[]> {
+export async function previewFile(path: string): Promise<PreviewData | { error: string }> {
+  try {
+    const buf = await readFile(path)
+    const reply = await runWorker<PreviewData | { error: string }>({ mode: 'preview', fileName: basename(path), bytes: new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength) })
+    return reply.ok ? reply.result : { error: reply.error }
+  } catch (error) {
+    return { error: `파일을 열 수 없습니다: ${error instanceof Error ? error.message : String(error)}` }
+  }
+}
+
+export async function readDocuments(requests: ReadRequest[], options: ReadOptions = {}): Promise<ParsedDocument[]> {
   const out: ParsedDocument[] = []
   for (const req of requests) {
     const fileName = basename(req.path)
@@ -47,7 +59,7 @@ export async function readDocuments(requests: ReadRequest[]): Promise<ParsedDocu
       const buf = await readFile(req.path)
       const bytes = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength)
       const hash = createHash('sha256').update(bytes).digest('hex')
-      const reply = await runWorker(fileName, bytes, req.kind)
+      const reply: ReadReply = await runWorker({ mode: 'read', fileName, bytes, kind: req.kind, options })
       const elapsedMs = Date.now() - started
       if (reply.ok) {
         out.push({ ...reply.result, path: req.path, size: info.size, hash, elapsedMs })

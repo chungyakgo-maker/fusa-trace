@@ -4,6 +4,7 @@ import type { TraceItem } from '../../core/model'
 import { connectedOf, nodeIdOf, type MapColumn, type MapLayout, type MapNode, type MapOptions, type NodeTone } from '../../core/traceMap'
 import type { SystemTrace } from '../../core/trace'
 import type { SoftwareTrace } from '../../core/software'
+import type { HardwareTrace } from '../../core/hardware'
 import { isResolved, METHOD_LABEL, type Resolution } from '../../core/resolve'
 import { ORIGIN_LABEL } from '../../core/fsr'
 import { AlertIcon, CheckIcon, CircleIcon, HelpIcon, MinusCircleIcon, PlusIcon, XIcon } from './icons'
@@ -77,13 +78,15 @@ export function TraceMap({
   sg,
   sys,
   sw,
+  hw,
   onGoIdMap
 }: {
-  /** 배치 계산 (시스템 또는 소프트웨어) */
+  /** 배치 계산 (시스템·소프트웨어·하드웨어) */
   build: (opts: MapOptions) => MapLayout
   sg: string
   sys: SystemTrace
   sw: SoftwareTrace
+  hw: HardwareTrace
   onGoIdMap: () => void
 }): ReactElement {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -187,7 +190,7 @@ export function TraceMap({
             ))}
           </div>
         </div>
-        {selectedNode && <DetailPanel node={selectedNode} sys={sys} sw={sw} onClose={() => setSelected(null)} onGoTo={goTo} onGoIdMap={onGoIdMap} />}
+        {selectedNode && <DetailPanel node={selectedNode} sys={sys} sw={sw} hw={hw} onClose={() => setSelected(null)} onGoTo={goTo} onGoIdMap={onGoIdMap} />}
       </div>
     </div>
   )
@@ -225,6 +228,7 @@ export function DetailPanel({
   node,
   sys,
   sw,
+  hw,
   onClose,
   onGoTo,
   onGoIdMap
@@ -232,6 +236,7 @@ export function DetailPanel({
   node: MapNode
   sys: SystemTrace
   sw: SoftwareTrace
+  hw: HardwareTrace
   onClose: () => void
   onGoTo: (item: TraceItem) => void
   onGoIdMap: () => void
@@ -241,15 +246,28 @@ export function DetailPanel({
   const tsrRow = item?.kind === 'TSR' ? sys.tsrs.find((t) => t.item === item) : undefined
   const swRow = item?.kind === 'TSR' ? sw.tsrs.find((t) => t.item === item) : undefined
   const ssrRow = item?.kind === 'SSR' ? sw.ssrs.find((s) => s.item === item) : undefined
-  const doc = item ? sys.sources.get(item) ?? sw.sources.get(item) : undefined
-  const problems = [...(tsrRow?.problems ?? []), ...(ssrRow?.problems ?? [])]
+  const hwRow = item?.kind === 'TSR' ? hw.tsrs.find((t) => t.item === item) : undefined
+  const hsrRow = item?.kind === 'HSR' ? hw.hsrs.find((h) => h.item === item) : undefined
+  const testRow = item?.kind === 'SWTEST' ? sw.tests.find((t) => t.item === item) : undefined
+  const doc = item ? sys.sources.get(item) ?? sw.sources.get(item) ?? hw.sources.get(item) : undefined
+  const problems = [...(tsrRow?.problems ?? []), ...(ssrRow?.problems ?? []), ...(hsrRow?.problems ?? []), ...(testRow?.problems ?? [])]
+  const upRow = hsrRow ?? testRow
   const needsPick =
     Boolean(tsrRow?.refs.some((r) => !isResolved(r))) ||
     Boolean(ssrRow?.refs.some((r) => !isResolved(r))) ||
+    Boolean(upRow?.refs.some((r) => !isResolved(r))) ||
     Boolean(fsrRow && fsrRow.ambiguous.length > 0) ||
     Boolean(tsrRow && tsrRow.causeAmbiguous.length > 0) ||
-    Boolean(swRow && swRow.ambiguous.length > 0)
-  const kindLabel = item ? ({ SG: '안전 목표', FSR: 'FSR', TSR: 'TSR', SSR: 'SSR', FMEA_CAUSE: 'FMEA 고장원인' } as Record<string, string>)[item.kind] ?? item.kind : node.kind === 'ghost' ? '빈 자리' : node.kind === 'cluster' ? 'FMEA 고장원인 모음' : ''
+    Boolean(swRow && swRow.ambiguous.length > 0) ||
+    Boolean(hwRow && hwRow.ambiguous.length > 0) ||
+    Boolean(ssrRow && ssrRow.testAmbiguous.length > 0)
+  const kindLabel = item
+    ? ({ SG: '안전 목표', FSR: 'FSR', TSR: 'TSR', SSR: 'SSR', HSR: 'HSR', SWTEST: 'SW 요구사항 시험', FMEA_CAUSE: 'FMEA 고장원인' } as Record<string, string>)[item.kind] ?? item.kind
+    : node.kind === 'ghost'
+      ? '빈 자리'
+      : node.kind === 'cluster'
+        ? '모음'
+        : ''
 
   return (
     <aside className="map-detail" aria-label="상세">
@@ -394,6 +412,52 @@ export function DetailPanel({
           <p>
             <TraceBadge status={ssrRow.status} /> <span className="muted small">{ssrRow.reason}</span>
           </p>
+          <ul className="ref-list">
+            {ssrRow.tests.map((x, i) => (
+              <li key={i}>
+                <span className="mono">{x.test.rawId}</span> <span className="muted small">{METHOD_LABEL[x.method]}</span>
+                <div className="muted small">{x.test.title}</div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {hwRow && (
+        <section>
+          <h4>HSR 연결</h4>
+          <p>
+            <TraceBadge status={hwRow.status} /> {hwRow.reason && <span className="muted small">{hwRow.reason}</span>}
+          </p>
+          <ul className="ref-list">
+            {hwRow.hsrs.map((x, i) => (
+              <li key={i}>
+                <ItemLink item={x.hsr} onGoTo={onGoTo} /> <span className="muted small">{METHOD_LABEL[x.method]}</span>
+              </li>
+            ))}
+            {hwRow.ambiguous.map((l, i) => (
+              <li key={`a${i}`}>
+                <ItemLink item={l.from} onGoTo={onGoTo} /> <span className="check-text small">후보 (확인 필요: {l.resolution.ref})</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {upRow && (
+        <section>
+          <h4>위 단계 ({hsrRow ? 'TSR' : 'SSR'}) 참조</h4>
+          <div className="muted small">적힌 참조 원문 (칸 지정한 위 단계 ID 칸)</div>
+          <pre className="ref-raw">{upRow.item.refRaw || '(비어 있음)'}</pre>
+          <RefList refs={upRow.refs} onGoTo={onGoTo} />
+          {hsrRow && (
+            <>
+              <h4>FMEDA</h4>
+              <p>
+                <TraceBadge status={hsrRow.status} /> <span className="muted small">{hsrRow.reason}</span>
+              </p>
+            </>
+          )}
         </section>
       )}
 
@@ -418,13 +482,13 @@ export function DetailPanel({
 
       {node.kind === 'cluster' && node.items && (
         <section>
-          <h4>고장원인 {node.items.length}건</h4>
+          <h4>{node.items[0]?.kind === 'SWTEST' ? 'SW 시험' : '고장원인'} {node.items.length}건</h4>
           <ul className="ref-list">
             {node.items.map((c, i) => (
               <li key={i}>
                 <div>{c.title}</div>
                 <div className="muted small">
-                  {c.location} · TSR ID: <span className="mono">{c.refRaw.replace(/\s+/g, ' ').trim() || '-'}</span>
+                  {c.kind === 'SWTEST' ? c.rawId : c.location} · {c.kind === 'SWTEST' ? '검증 대상' : 'TSR ID'}: <span className="mono">{c.refRaw.replace(/\s+/g, ' ').trim() || '-'}</span>
                   {c.asil ? ` · ASIL ${c.asil}` : ''}
                 </div>
               </li>

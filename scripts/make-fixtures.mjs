@@ -11,6 +11,7 @@ import { makeFsrFiles } from './fixtures/fsr.mjs'
 import { makeTscFiles } from './fixtures/tsc.mjs'
 import { makeFmeaFiles } from './fixtures/fmea.mjs'
 import { makeSrsFiles } from './fixtures/srs.mjs'
+import { makeNewFormFiles } from './fixtures/newforms.mjs'
 import { docx, para, table } from './fixtures/docx.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -191,6 +192,7 @@ export async function makeAll() {
   await makeTscFiles(OUT)
   await makeFmeaFiles(OUT)
   await makeSrsFiles(OUT)
+  await makeNewFormFiles(OUT)
 
   console.log(`가짜 문서 생성 완료: ${OUT} (${Date.now() - started}ms)`)
 }

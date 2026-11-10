@@ -215,7 +215,20 @@ function Shell(): ReactElement {
         </div>
       )}
 
-      {importPaths && <ImportDialog project={project} paths={importPaths} onApply={applyImport} onClose={() => setImportPaths(null)} />}
+      {importPaths && (
+        <ImportDialog
+          project={project}
+          paths={importPaths}
+          onApply={applyImport}
+          onClose={() => setImportPaths(null)}
+          onRuleSaved={(rule) => {
+            const next = { ...project, settings: { ...project.settings, readRules: [...(project.settings.readRules ?? []), rule] } }
+            setProject(next)
+            void update(next)
+            toast.show('ok', `칸 지정 규칙 '${rule.name}'을(를) 저장했습니다. 같은 모양의 문서는 다음부터 자동으로 읽습니다.`)
+          }}
+        />
+      )}
 
       {exportOpen && (
         <Modal

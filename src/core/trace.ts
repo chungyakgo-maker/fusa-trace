@@ -18,7 +18,8 @@ export interface RefLink {
 
 /** 참조가 적힌 문서 종류 (별칭 저장용) */
 export function sourceKindOf(item: TraceItem): DocKind {
-  return item.kind === 'TSR' ? 'TSC' : item.kind === 'FMEA_CAUSE' ? 'FMEA' : item.kind === 'SSR' ? 'SRS' : 'OTHER'
+  const map: Partial<Record<TraceItem['kind'], DocKind>> = { TSR: 'TSC', FMEA_CAUSE: 'FMEA', SSR: 'SRS', HSR: 'HSR', SWTEST: 'SWTEST' }
+  return map[item.kind] ?? 'OTHER'
 }
 
 export function hasAsil(item: TraceItem): boolean {

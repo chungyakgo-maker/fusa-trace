@@ -19,7 +19,8 @@ const api: FusaApi = {
   docs: {
     pick: () => ipcRenderer.invoke(IPC.docsPick),
     pathOf: (file) => webUtils.getPathForFile(file),
-    read: (requests) => ipcRenderer.invoke(IPC.docsRead, requests)
+    read: (requests, options) => ipcRenderer.invoke(IPC.docsRead, requests, options),
+    preview: (path) => ipcRenderer.invoke(IPC.docsPreview, path)
   },
   exportSchedule: (project, today, options) => ipcRenderer.invoke(IPC.exportSchedule, project, today, options),
   showInFolder: (path) => ipcRenderer.invoke(IPC.showInFolder, path),

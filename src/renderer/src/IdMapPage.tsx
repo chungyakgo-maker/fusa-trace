@@ -3,6 +3,7 @@ import { useMemo, useState, type ReactElement } from 'react'
 import type { Alias, DocKind, Project, TraceItem } from '../../core/model'
 import { computeSystemTrace, sourceKindOf, type RefLink } from '../../core/trace'
 import { computeSoftwareTrace } from '../../core/software'
+import { computeHardwareTrace } from '../../core/hardware'
 import { itemKey } from '../../core/project'
 import { shortText } from '../../core/text'
 import { TrashIcon } from './icons'
@@ -35,7 +36,9 @@ function label(item: TraceItem): string {
   return `${item.rawId}${item.dupCount > 1 ? ` (중복 #${item.dupIndex})` : ''}`
 }
 
-const SOURCE_LABEL: Partial<Record<DocKind, string>> = { TSC: 'TSC → FSR', FMEA: 'FMEA → TSR', SRS: 'SRS → TSR' }
+const SOURCE_LABEL: Partial<Record<DocKind, string>> = { TSC: 'TSC → FSR', FMEA: 'FMEA → TSR', SRS: 'SRS → TSR', HSR: 'HSR → TSR', SWTEST: 'SW 시험 → SSR' }
+/** 참조 대상 종류: TSC는 FSR, SW 시험은 SSR, 그 외는 TSR */
+const TARGET_KIND = (k: DocKind): 'FSR' | 'SSR' | 'TSR' => (k === 'TSC' ? 'FSR' : k === 'SWTEST' ? 'SSR' : 'TSR')
 
 function Picker({ group, options, onSave }: { group: RefGroup; options: TraceItem[]; onSave: (target: TraceItem) => void }): ReactElement {
   const [choice, setChoice] = useState('')
@@ -78,14 +81,16 @@ function Picker({ group, options, onSave }: { group: RefGroup; options: TraceIte
 export function IdMapPage({ project, onChange }: { project: Project; onChange: (p: Project) => void }): ReactElement {
   const trace = useMemo(() => computeSystemTrace(project), [project])
   const sw = useMemo(() => computeSoftwareTrace(project), [project])
+  const hw = useMemo(() => computeHardwareTrace(project), [project])
   const groups = useMemo(
-    () => groupLinks([...trace.links, ...sw.links].filter((l) => l.resolution.method !== 'exact' && l.resolution.method !== 'normalized')),
-    [trace, sw]
+    () => groupLinks([...trace.links, ...sw.links, ...hw.links].filter((l) => l.resolution.method !== 'exact' && l.resolution.method !== 'normalized')),
+    [trace, sw, hw]
   )
   const allFsrs = trace.fsrs.map((f) => f.item)
   const allTsrs = trace.tsrs.map((t) => t.item)
-  const byKey = new Map([...allFsrs, ...allTsrs].map((f) => [`${f.kind}:${itemKey(f)}`, f]))
-  const optionsFor = (g: RefGroup): TraceItem[] => (g.sourceKind === 'TSC' ? allFsrs : allTsrs)
+  const allSsrs = sw.ssrs.map((s) => s.item)
+  const byKey = new Map([...allFsrs, ...allTsrs, ...allSsrs].map((f) => [`${f.kind}:${itemKey(f)}`, f]))
+  const optionsFor = (g: RefGroup): TraceItem[] => ({ FSR: allFsrs, SSR: allSsrs, TSR: allTsrs })[TARGET_KIND(g.sourceKind)]
 
   const saveAlias = (g: RefGroup, target: TraceItem): void => {
     const alias: Alias = { sourceKind: g.sourceKind, ref: g.norm, target: itemKey(target), createdAt: new Date().toISOString() }
@@ -93,7 +98,7 @@ export function IdMapPage({ project, onChange }: { project: Project; onChange: (
   }
 
   if (!trace.hasTsc) {
-    return <EmptyState title="TSC를 넣으면 ID 대응표가 채워집니다">TSC(→ FSR), FMEA·SRS(→ TSR)에 적힌 참조 중 애매하거나 없는 것을 여기서 골라 기억합니다.</EmptyState>
+    return <EmptyState title="TSC를 넣으면 ID 대응표가 채워집니다">TSC(→ FSR), FMEA·SRS·HSR(→ TSR), SW 시험(→ SSR)에 적힌 참조 중 애매하거나 없는 것을 여기서 골라 기억합니다.</EmptyState>
   }
 
   const ambiguous = groups.filter((g) => g.method === 'ambiguous')
@@ -206,7 +211,7 @@ export function IdMapPage({ project, onChange }: { project: Project; onChange: (
             </thead>
             <tbody>
               {project.aliases.map((a) => {
-                const target = byKey.get(`${a.sourceKind === 'TSC' ? 'FSR' : 'TSR'}:${a.target}`)
+                const target = byKey.get(`${TARGET_KIND(a.sourceKind)}:${a.target}`)
                 return (
                   <tr key={`${a.sourceKind}-${a.ref}`}>
                     <td>{a.sourceKind}</td>

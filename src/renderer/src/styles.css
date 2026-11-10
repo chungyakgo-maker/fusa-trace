@@ -1625,3 +1625,72 @@ input[type='date'] {
   align-items: flex-start;
   gap: 6px;
 }
+
+/* ───────── 칸 지정 */
+.mapping p {
+  margin: 4px 0 10px;
+}
+.mapping-callout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: 1px solid #f0d58a;
+  border-radius: 8px;
+  background: var(--check-soft);
+  color: var(--check);
+  font-weight: 600;
+}
+.mapping-grid {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.mapping-grid th {
+  min-width: 140px;
+  vertical-align: bottom;
+  background: var(--surface-muted);
+}
+.mapping-head {
+  margin-bottom: 4px;
+  color: var(--text);
+  white-space: normal;
+}
+.mapping-grid td.mapped {
+  background: var(--accent-soft);
+}
+.role-select {
+  width: 100%;
+  min-height: 30px;
+  font-size: 12px;
+}
+.role-select.role-set {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+.mapping-kv td:first-child {
+  white-space: normal;
+  color: var(--text);
+}
+.syn-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.syn-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 0 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-size: 12px;
+}
+.syn-chip .icon-btn {
+  min-width: 24px;
+  min-height: 24px;
+}

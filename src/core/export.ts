@@ -7,6 +7,7 @@ import { assigneeText, computeSchedule, ddayText, summarize, summarizeByOwner, t
 import { compactDate } from './dates'
 import { computeSystemTrace } from './trace'
 import { computeSoftwareTrace } from './software'
+import { computeHardwareTrace } from './hardware'
 import { collectTraceIssues } from './issues'
 
 export const SHEET_LIST = '작성 리스트'
@@ -154,7 +155,7 @@ export async function buildScheduleWorkbook(p: Project, today: IsoDate, exportDa
 
   // ── 시트 3: 추적성 누락 (선택)
   if (options.includeTrace) {
-    const issues = collectTraceIssues(computeSystemTrace(p), computeSoftwareTrace(p))
+    const issues = collectTraceIssues(computeSystemTrace(p), computeSoftwareTrace(p), computeHardwareTrace(p))
     const ts = wb.addWorksheet(SHEET_TRACE, { pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 } })
     styleHeader(ts.addRow(['단계', '항목 ID', '제목', '문제 종류', '출처 문서']))
     for (const i of issues) {

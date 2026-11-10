@@ -7,6 +7,7 @@
 //     → 엑셀 출력 → 다시 열어도 저장돼 있는지 (먼저 npm run fixtures)
 //   - FSR + TSC → 추적성(누락·없는 ID·ID 중복) → 연결 지도·상세 패널 → ID 대응표에서 골라 연결
 //   - FMEA + SRS → FMEA 근거, 소프트웨어 탭(지도·역방향 확인), ID 대응표(SRS 참조), 엑셀 시트 3
+//   - 처음 보는 양식: HSR 칸 지정 → 하드웨어 탭 연결, 같은 모양 자동, SW 시험 명세 칸 지정, 동의어 추가
 //   - 대량(TSR 320개): 읽기 시간, 지도 모두 펼치기·카드 누르기·탭 전환 시간
 //   - 화면 캡처 저장 (Actions 아티팩트로 올림)
 //
@@ -243,6 +244,77 @@ try {
   s3?.eachRow((r, i) => i > 1 && stages.add(String(r.getCell(1).value)))
   // (FSR 누락은 앞에서 ID 대응표로 연결해 0건)
   check(['TSR → FSR (참조)', 'TSR → FMEA 근거', 'TSR → SSR', '역방향: SSR', '역방향: FMEA 고장원인'].every((x) => stages.has(x)) && !stages.has('FSR → TSR'), '엑셀 시트 3: 단계별 누락·확인 필요', [...stages].join(', '))
+
+  // ── M5: 처음 보는 양식 칸 지정 → 하드웨어 탭, SW 시험, 같은 모양 자동, 동의어
+  const pick = async (paths) => {
+    await app.evaluate(({ dialog }, ps) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: ps })
+    }, paths)
+    await win.getByRole('button', { name: '문서 넣기' }).first().click()
+    await win.waitForFunction((n) => document.querySelectorAll('.import-card').length === n, paths.length, { timeout: 60_000 })
+  }
+  await pick([join(FIXTURES, `${P}_HSR_R1.xlsx`)])
+  check((await win.locator('dialog.modal').innerText()).includes('처음 보는 양식입니다'), '칸 지정: HSR(처음 보는 양식) → 칸 지정 안내')
+  await win.getByRole('button', { name: '칸 지정', exact: true }).click()
+  await win.getByLabel('HW Req No. 칸의 역할').selectOption('id')
+  await win.getByLabel('Parent TSR 칸의 역할').selectOption('ref')
+  await win.getByLabel('Requirement 칸의 역할').selectOption('title')
+  await win.getByLabel('ASIL 칸의 역할').selectOption('asil')
+  await win.getByLabel('Status 칸의 역할').selectOption('status')
+  await win.screenshot({ path: screenshotPath.replace(/\.png$/, '-mapping.png') })
+  await win.getByRole('button', { name: '저장하고 다시 읽기' }).click()
+  await win.waitForFunction(() => document.querySelector('.import-card')?.textContent?.includes('HSR 15'), null, { timeout: 60_000 })
+  check(true, '칸 지정: 머리글 칸 역할만 정하면 HSR 15개를 읽음')
+  await win.getByRole('button', { name: /^반영 \(1개\)$/ }).click()
+  await win.waitForSelector('dialog.modal', { state: 'detached' })
+  await win.locator('.menu-item', { hasText: '추적성' }).click()
+  await win.getByRole('tab', { name: /하드웨어/ }).click()
+  await win.waitForSelector('[data-testid="trace-map"] .map-card')
+  const hwCards = await win.locator('.stage-cards').innerText()
+  check(/12\s*\/\s*22/.test(hwCards), '하드웨어 탭: 칸 지정한 HSR이 TSR에 연결 (12 / 22)', hwCards.replace(/\s+/g, ' '))
+  const hwMap = await win.getByTestId('trace-map').innerText()
+  check(hwMap.includes('HSR 없음') && hwMap.includes('TSR 미기재') && hwMap.includes('TSR-CTL-SG001-099 없음'), '하드웨어 지도: HSR 없음 / TSR 미기재 / 없는 TSR')
+  await win.screenshot({ path: screenshotPath.replace(/\.png$/, '-hardware.png') })
+
+  await pick([join(FIXTURES, `${P}_HSR 보조_R0.xlsx`)])
+  const autoText = await win.locator('dialog.modal').innerText()
+  check(autoText.includes('칸 지정 규칙') && autoText.includes('HSR 5'), '같은 모양의 다른 HSR 파일은 규칙을 자동으로 다시 씀')
+  await win.getByRole('button', { name: /^반영 \(1개\)$/ }).click()
+  await win.waitForSelector('dialog.modal', { state: 'detached' })
+  const hwCards2 = await win.locator('.stage-cards').innerText()
+  check(/17\s*\/\s*22/.test(hwCards2), '하드웨어 탭: 두 번째 HSR 파일까지 17 / 22', hwCards2.replace(/\s+/g, ' '))
+
+  await pick([join(FIXTURES, `${P}_SW 시험 명세_R0.docx`)])
+  await win.locator('.import-card').getByLabel('문서 종류').selectOption('SWTEST')
+  await win.getByRole('button', { name: '칸 지정', exact: true }).click()
+  await win.getByLabel('Test Case ID 칸의 역할').selectOption('id')
+  await win.getByLabel('Verified Requirement 칸의 역할').selectOption('ref')
+  await win.getByLabel('Test Title 칸의 역할').selectOption('title')
+  await win.getByRole('button', { name: '저장하고 다시 읽기' }).click()
+  await win.waitForFunction(() => /SW 시험 \d+/.test(document.querySelector('.import-card')?.textContent ?? ''), null, { timeout: 60_000 })
+  await win.getByRole('button', { name: /^반영 \(1개\)$/ }).click()
+  await win.waitForSelector('dialog.modal', { state: 'detached' })
+  await win.getByRole('tab', { name: /소프트웨어/ }).click()
+  const swCards3 = await win.locator('.stage-cards').innerText()
+  check(/29\s*\/\s*31/.test(swCards3), '소프트웨어 탭: 칸 지정한 SW 시험 명세 → SW 요구사항 시험 29 / 31', swCards3.replace(/\s+/g, ' '))
+  check((await win.getByTestId('trace-map').innerText()).includes('SW 시험 없음'), '소프트웨어 지도: SW 시험 없음')
+  const pill13 = (await win.locator('.count-pill').innerText()).trim()
+  check(pill13 === '13', 'ID 대응표: HSR 3 + SW 시험 1 추가 (9 → 13건)', pill13)
+
+  // 설정: 칸 지정 규칙 목록, 동의어 추가 → 기본 동의어에 없는 FSR 양식을 읽음
+  await win.locator('.menu-item', { hasText: '설정' }).click()
+  const settingsText = await win.locator('main').innerText()
+  check(settingsText.includes('칸 지정 규칙') && settingsText.includes('HSR 양식') && settingsText.includes('SW 시험 명세 양식'), '설정: 저장된 칸 지정 규칙 2개')
+  await win.getByLabel('동의어를 추가할 칸').selectOption('fsrId')
+  await win.getByLabel('문서에 적힌 칸 이름').fill('FSR 번호')
+  await win.getByRole('button', { name: '동의어 추가' }).click()
+  await win.getByLabel('동의어를 추가할 칸').selectOption('fsrText')
+  await win.getByLabel('문서에 적힌 칸 이름').fill('요구사항')
+  await win.getByRole('button', { name: '동의어 추가' }).click()
+  await pick([join(FIXTURES, `${P}_FSR_양식C_R00.xlsx`)])
+  const synText = await win.locator('dialog.modal').innerText()
+  check(synText.includes('FSR 2'), '설정: 동의어를 추가하면 처음 보는 머리글의 FSR도 읽음')
+  await win.getByRole('button', { name: '취소' }).click()
 
   // ── 대량: 새 프로젝트에 FSR + 대용량 TSC (본문 XML 약 20MB, TSR 320개)
   await win.getByRole('button', { name: /^프로젝트:/ }).click()

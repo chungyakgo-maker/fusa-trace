@@ -3,18 +3,20 @@
  * → 큰 문서를 읽는 동안 화면이 멈추지 않고, 엑셀 라이브러리의 알려진 약점이 앱 본체에 영향을 주지 못함
  */
 import { parentPort, workerData } from 'node:worker_threads'
-import type { DocKind } from '../core/model'
-import { readDocument } from '../core/importer'
+import type { DocKind, ReadOptions } from '../core/model'
+import { previewDocument, readDocument } from '../core/importer'
 
 interface Job {
+  mode: 'read' | 'preview'
   fileName: string
   bytes: Uint8Array
   kind?: DocKind
+  options?: ReadOptions
 }
 
 const job = workerData as Job
 try {
-  const result = readDocument(job.fileName, job.bytes, job.kind)
+  const result = job.mode === 'preview' ? previewDocument(job.fileName, job.bytes) : readDocument(job.fileName, job.bytes, job.kind, job.options)
   parentPort?.postMessage({ ok: true, result })
 } catch (error) {
   parentPort?.postMessage({ ok: false, error: error instanceof Error ? error.message : String(error) })

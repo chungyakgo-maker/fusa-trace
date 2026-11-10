@@ -2,12 +2,12 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { Project } from '../core/model'
+import type { Project, ReadOptions } from '../core/model'
 import { buildScheduleXlsx, exportFileName } from '../core/export'
 import { localToday } from '../core/dates'
 import { IPC, type AppInfo, type ExportResult, type ReadRequest, type SaveResult } from '../shared/ipc'
 import { ProjectStore } from './store'
-import { readDocuments } from './documents'
+import { previewFile, readDocuments } from './documents'
 import { log } from './log'
 
 function errorText(error: unknown): string {
@@ -73,7 +73,8 @@ export function registerIpc(store: ProjectStore, logFile: string): void {
     return r.canceled ? [] : r.filePaths
   })
 
-  ipcMain.handle(IPC.docsRead, (_e, requests: ReadRequest[]) => readDocuments(requests))
+  ipcMain.handle(IPC.docsRead, (_e, requests: ReadRequest[], options?: ReadOptions) => readDocuments(requests, options ?? {}))
+  ipcMain.handle(IPC.docsPreview, (_e, path: string) => previewFile(path))
 
   ipcMain.handle(IPC.exportSchedule, async (e, p: Project, today: string, exportOptions?: { includeTrace?: boolean }): Promise<ExportResult> => {
     try {

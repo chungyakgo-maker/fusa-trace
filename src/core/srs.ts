@@ -17,20 +17,23 @@ export interface SrsParseResult {
   report: ImportReport
 }
 
-const KEYS: [string, readonly string[]][] = [
-  ['id', ['requirement identifier']],
-  ['title', ['requirement title']],
-  ['text', SYNONYMS.srsText],
-  ['fsr', ['functional safety related']],
-  ['asil', ['asil']],
-  ['ftti', ['ftti', 'frti']],
-  ['safeState', ['safety state', 'safe state']],
-  ['higher', SYNONYMS.srsHigher]
-]
+/** 키 → 표준 이름 (동의어는 읽을 때마다 최신 값을 씀) */
+function keys(): [string, readonly string[]][] {
+  return [
+    ['id', ['requirement identifier']],
+    ['title', ['requirement title']],
+    ['text', SYNONYMS.srsText],
+    ['fsr', ['functional safety related']],
+    ['asil', ['asil']],
+    ['ftti', ['ftti', 'frti', ...SYNONYMS.ftti]],
+    ['safeState', ['safety state', 'safe state', ...SYNONYMS.safeState]],
+    ['higher', SYNONYMS.srsHigher]
+  ]
+}
 
 function keyOf(raw: string): string | undefined {
   const n = normHeader(raw)
-  for (const [k, syn] of KEYS) if (syn.includes(n)) return k
+  for (const [k, syn] of keys()) if (syn.includes(n)) return k
   return undefined
 }
 
