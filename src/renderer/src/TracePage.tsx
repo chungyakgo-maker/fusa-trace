@@ -6,6 +6,8 @@ import { ORIGIN_LABEL } from '../../core/fsr'
 import { isResolved } from '../../core/resolve'
 import { shortText } from '../../core/text'
 import { Disclosure, EmptyState, TraceBadge } from './ui'
+import { TraceMap } from './TraceMap'
+import { UNKNOWN_BLOCK } from '../../core/traceMap'
 
 type Tab = 'system' | 'software' | 'hardware'
 const TABS: { id: Tab; label: string; sub: string }[] = [
@@ -87,6 +89,7 @@ export function TracePage({ project, onImport, onGoIdMap }: { project: Project; 
 function SystemTab({ trace, onImport, onGoIdMap }: { trace: SystemTrace; onImport: () => void; onGoIdMap: () => void }): ReactElement {
   const [sg, setSg] = useState('전체')
   const [status, setStatus] = useState<TraceStatus | '전체'>('전체')
+  const [view, setView] = useState<'map' | 'list'>('map')
 
   if (!trace.hasFsr && !trace.hasTsc) {
     return (
@@ -118,10 +121,10 @@ function SystemTab({ trace, onImport, onGoIdMap }: { trace: SystemTrace; onImpor
     <div className="page-stack">
       <StageCards cards={trace.cards} />
 
-      <section className="panel" aria-label="FSR 기준 연결">
+      <section className="panel" aria-label={view === 'map' ? '연결 지도' : 'FSR 기준 연결'}>
         <div className="panel-head">
           <div>
-            <h2>FSR → TSR 연결</h2>
+            <h2>{view === 'map' ? '연결 지도' : 'FSR → TSR 연결'}</h2>
             <p className="muted small">문제 있는 항목을 먼저 보여 줍니다. 대상 아님(타 ECU에 요구)은 연결률 계산에서 뺍니다.</p>
           </div>
           <div className="filters">
@@ -137,6 +140,7 @@ function SystemTab({ trace, onImport, onGoIdMap }: { trace: SystemTrace; onImpor
                 ))}
               </select>
             </label>
+            {view === 'list' && (
             <div className="chips" role="group" aria-label="상태 거르기">
               <button type="button" className="chip" aria-pressed={status === '전체'} onClick={() => setStatus('전체')}>
                 전체 {bySg.length}
@@ -147,16 +151,20 @@ function SystemTab({ trace, onImport, onGoIdMap }: { trace: SystemTrace; onImpor
                 </button>
               ))}
             </div>
+            )}
             <div className="view-toggle" role="group" aria-label="보기">
-              <button type="button" className="chip" aria-pressed="true">
-                목록
+              <button type="button" className="chip" aria-pressed={view === 'map'} onClick={() => setView('map')}>
+                연결 지도
               </button>
-              <button type="button" className="chip" disabled title="M3에서 제공">
-                연결 지도 (M3)
+              <button type="button" className="chip" aria-pressed={view === 'list'} onClick={() => setView('list')}>
+                목록
               </button>
             </div>
           </div>
         </div>
+        {view === 'map' ? (
+          <TraceMap trace={trace} sg={sg === '전체' ? 'all' : sg === '(SG 없음)' ? UNKNOWN_BLOCK : sg} onGoIdMap={onGoIdMap} />
+        ) : (
         <div className="table-scroll">
           <table className="trace-table">
             <thead>
@@ -210,6 +218,7 @@ function SystemTab({ trace, onImport, onGoIdMap }: { trace: SystemTrace; onImpor
             </tbody>
           </table>
         </div>
+        )}
       </section>
 
       <section className="panel" aria-label="TSR 쪽 문제 (역방향 확인)">
@@ -258,7 +267,7 @@ function SystemTab({ trace, onImport, onGoIdMap }: { trace: SystemTrace; onImpor
         )}
       </section>
 
-      {trace.tsrs.length > 0 && (
+      {view === 'list' && trace.tsrs.length > 0 && (
         <section className="panel pad-panel" aria-label="TSR 목록">
           <Disclosure summary={<span>TSR 목록 {trace.tsrs.length}개 (다음 단계: FMEA 근거)</span>}>
             <div className="table-scroll">

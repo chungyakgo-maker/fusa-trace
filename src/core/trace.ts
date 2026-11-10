@@ -2,7 +2,7 @@
  * 추적성 계산 (SPEC §8): 시스템 탭 (SG → FSR → TSR → FMEA 근거)
  * 상태: 연결됨 / 확인 필요 / 누락 / 대상 아님 / 문서 대기 — 순수 함수 (화면 공용)
  */
-import type { Project, TraceItem } from './model'
+import type { Project, SourceDoc, TraceItem } from './model'
 import { activeDocs } from './project'
 import { isResolved, Resolver, type Resolution } from './resolve'
 import { ORIGIN_LABEL } from './fsr'
@@ -55,6 +55,8 @@ export interface SystemTrace {
   cards: StageCard[]
   /** ID 대응표용: 위 단계 참조 전체 */
   links: RefLink[]
+  /** 항목 → 출처 문서 */
+  sources: Map<TraceItem, SourceDoc>
 }
 
 function fsrLabel(item: TraceItem): string {
@@ -69,6 +71,8 @@ export function computeSystemTrace(p: Project): SystemTrace {
   const fsrs = fsrItems.filter((i) => i.kind === 'FSR')
   const sgs = fsrItems.filter((i) => i.kind === 'SG')
   const tsrs = tscDocs.flatMap((d) => d.items ?? []).filter((i) => i.kind === 'TSR')
+  const sources = new Map<TraceItem, SourceDoc>()
+  for (const d of [...fsrDocs, ...tscDocs]) for (const it of d.items ?? []) sources.set(it, d)
   const resolver = new Resolver(fsrs, p.aliases, 'TSC')
 
   // TSR → FSR 참조 해석
@@ -149,7 +153,7 @@ export function computeSystemTrace(p: Project): SystemTrace {
     { label: '시스템 통합 시험', pending: '문서 미등록 (자리)' }
   ]
 
-  return { hasFsr: fsrDocs.length > 0, hasTsc: tscDocs.length > 0, sgs, fsrs: fsrRows, tsrs: tsrRows, cards, links }
+  return { hasFsr: fsrDocs.length > 0, hasTsc: tscDocs.length > 0, sgs, fsrs: fsrRows, tsrs: tsrRows, cards, links, sources }
 }
 
 /** ID 대응표에 올릴 참조: 확인 필요 / 없는 ID / 약식 표기 / 별칭 */

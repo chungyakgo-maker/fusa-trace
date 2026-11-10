@@ -5,7 +5,8 @@
 //   - Chromium 네트워크 기록(--log-net-log)으로 앱 코드 밖의 숨은 요청(맞춤법 사전 등)까지 0건인지
 //   - 프로젝트 만들기 → 가짜 문서 넣기(DRM·미지원·판별 불가 포함) → 가져오기 결과 → 반영 → 산출물 일정
 //     → 엑셀 출력 → 다시 열어도 저장돼 있는지 (먼저 npm run fixtures)
-//   - FSR + TSC → 추적성(누락·없는 ID·ID 중복) → ID 대응표에서 골라 연결 → 대용량 TSC 읽기 시간
+//   - FSR + TSC → 추적성(누락·없는 ID·ID 중복) → 연결 지도·상세 패널 → ID 대응표에서 골라 연결
+//   - 대량(TSR 320개): 읽기 시간, 지도 모두 펼치기·카드 누르기·탭 전환 시간
 //   - 화면 캡처 저장 (Actions 아티팩트로 올림)
 //
 // 사용법
@@ -146,6 +147,25 @@ try {
   await win.waitForSelector('.stage-cards')
   const cardsText = await win.locator('.stage-cards').innerText()
   check(/21\s*\/\s*22/.test(cardsText), '추적성: TSR 연결 21 / 22', cardsText.replace(/\s+/g, ' '))
+
+  // ── M3: 연결 지도 (기본 보기)
+  await win.waitForSelector('[data-testid="trace-map"] .map-card')
+  const mapText = await win.getByTestId('trace-map').innerText()
+  check(mapText.includes('TSR 없음'), '연결 지도: 누락 FSR → "TSR 없음" 빈 카드')
+  check(mapText.includes('FSR.001.099 없음'), '연결 지도: 없는 FSR 참조 → "FSR.001.099 없음" 빈 카드')
+  check(mapText.includes('TSR-CTL-SG001-012 (중복 #1)') && mapText.includes('TSR-CTL-SG001-012 (중복 #2)'), '연결 지도: ID 중복 TSR 카드 2개')
+  check(/정상 FSR \d+개/.test(mapText), '연결 지도: 정상 연결은 묶음 카드')
+  const dashed = await win.locator('path.edge-missing').count()
+  check(dashed >= 2, '연결 지도: 주황 점선 (누락·없는 ID)', `${dashed}개`)
+  let t0 = Date.now()
+  await win.locator('.map-card', { hasText: 'TSR-CTL-SG001-029' }).click()
+  await win.waitForSelector('.map-detail')
+  const clickMs = Date.now() - t0
+  const detail = await win.locator('.map-detail').innerText()
+  check(detail.includes('적힌 참조 원문') && detail.includes('FSR.001.099') && detail.includes('없는 ID'), '연결 지도: 카드 누르면 상세 패널 (적힌 참조 원문, 해석 방식)', `${clickMs}ms`)
+  check((await win.locator('.map-card.dim').count()) > 0, '연결 지도: 고른 카드의 연결만 강조 (나머지 흐리게)')
+  await win.screenshot({ path: screenshotPath.replace(/\.png$/, '-map.png') })
+  await win.getByRole('button', { name: '목록', exact: true }).click()
   const traceText = await win.locator('main').innerText()
   check(traceText.includes('누락 1'), '추적성: TSR 없는 FSR 1개 (누락)')
   check(traceText.includes('없는 FSR 참조: FSR.001.099'), '추적성: 없는 FSR을 가리키는 TSR')
@@ -165,16 +185,42 @@ try {
   const cardsAfter = await win.locator('.stage-cards').innerText()
   check(/22\s*\/\s*22/.test(cardsAfter), '추적성: 별칭으로 연결되어 22 / 22', cardsAfter.replace(/\s+/g, ' '))
 
-  // 대용량 TSC (본문 XML 약 20MB, TSR 320개) 읽기 시간 — 반영하지 않고 취소
+  // ── 대량: 새 프로젝트에 FSR + 대용량 TSC (본문 XML 약 20MB, TSR 320개)
+  await win.getByRole('button', { name: /^프로젝트:/ }).click()
+  await win.getByLabel('새 프로젝트 이름 (차종·제어기)').fill('대용량 확인')
+  await win.getByRole('button', { name: '만들기' }).click()
+  await win.waitForFunction(() => document.querySelector('.project-name')?.textContent === '대용량 확인')
   await app.evaluate(({ dialog }, paths) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: paths })
-  }, [join(FIXTURES, `${P}_기술안전개념서_대용량(TSC)_R1.docx`)])
+  }, [join(FIXTURES, `${P}_FSR_R01.xlsx`), join(FIXTURES, `${P}_기술안전개념서_대용량(TSC)_R1.docx`)])
   await win.getByRole('button', { name: '문서 넣기' }).first().click()
-  await win.waitForSelector('.import-card', { timeout: 60_000 })
-  const bigText = await win.locator('dialog.modal').innerText()
+  await win.waitForFunction(() => document.querySelectorAll('.import-card').length === 2, null, { timeout: 60_000 })
+  const bigText = await win.locator('.import-card', { hasText: '대용량' }).innerText()
   const secs = Number(/(\d+\.\d)초/.exec(bigText)?.[1] ?? 'NaN')
   check(bigText.includes('TSR 320') && secs < 10, '대용량 TSC(20MB, TSR 320개) 10초 안에 읽음', `${secs}초`)
-  await win.getByRole('button', { name: '취소' }).click()
+  await win.getByRole('button', { name: /^반영 \(2개\)$/ }).click()
+  await win.waitForSelector('dialog.modal', { state: 'detached' })
+
+  t0 = Date.now()
+  await win.locator('.menu-item', { hasText: '추적성' }).click()
+  await win.waitForSelector('[data-testid="trace-map"] .map-card')
+  check(Date.now() - t0 < 1000, '대량: 추적성 탭 열기 1초 이내', `${Date.now() - t0}ms · 카드 ${await win.locator('.map-card').count()}개 (접힘)`)
+  t0 = Date.now()
+  await win.getByRole('button', { name: '모두 펼치기' }).click()
+  await win.waitForFunction(() => document.querySelectorAll('.map-card.kind-item').length >= 320 + 23)
+  const expandMs = Date.now() - t0
+  check(expandMs < 1000, '대량: 모두 펼치기 (TSR 320 + FSR 23 카드) 1초 이내', `${expandMs}ms`)
+  t0 = Date.now()
+  await win.locator('.map-card', { hasText: 'FSR.001.001' }).click()
+  await win.waitForSelector('.map-detail')
+  const pickMs = Date.now() - t0
+  check(pickMs < 1000, '대량: 카드 누르기 → 강조·상세 1초 이내', `${pickMs}ms`)
+  await win.screenshot({ path: screenshotPath.replace(/\.png$/, '-map-large.png') })
+  t0 = Date.now()
+  await win.locator('.menu-item', { hasText: '산출물 일정' }).click()
+  await win.locator('.menu-item', { hasText: '추적성' }).click()
+  await win.waitForSelector('[data-testid="trace-map"] .map-card')
+  check(Date.now() - t0 < 1000, '대량: 탭 전환 (일정 → 추적성) 1초 이내', `${Date.now() - t0}ms`)
 
 
   // 지금까지(시작 ~ 메뉴 클릭) 나간 요청: 모두 앱 내부(file: 등)여야 함
