@@ -341,11 +341,38 @@ try {
   await win.waitForFunction(() => document.querySelectorAll('.map-card.kind-item').length >= 320 + 23)
   const expandMs = Date.now() - t0
   check(expandMs < 1000, '대량: 모두 펼치기 (TSR 320 + FSR 23 카드) 1초 이내', `${expandMs}ms`)
+  // 앱 반응 시간 = 화면이 클릭을 받은 순간 → 상세 패널이 생긴 순간 (사람이 느끼는 시간).
+  // Playwright 클릭 전체 시간(스크롤·가림 대기 포함)과 누르기 전에 카드를 가린 것도 함께 남김
+  const pre = await win.evaluate(() => {
+    const card = [...document.querySelectorAll('.map-card')].find((e) => e.textContent?.includes('FSR.001.001'))
+    const r = card?.getBoundingClientRect()
+    const hit = r ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) : null
+    const w = window
+    w.__pick = { click: 0, shown: 0 }
+    document.addEventListener('click', () => (w.__pick.click ||= performance.now()), { capture: true, once: true })
+    new MutationObserver((_, obs) => {
+      if (document.querySelector('.map-detail')) {
+        obs.disconnect()
+        // 다음 화면 그리기까지 포함
+        requestAnimationFrame(() => setTimeout(() => (w.__pick.shown = performance.now())))
+      }
+    }).observe(document.body, { childList: true, subtree: true })
+    return { covered: hit && card && !card.contains(hit) ? `${hit.tagName}.${hit.className}` : '', toasts: document.querySelectorAll('.toast').length }
+  })
   t0 = Date.now()
   await win.locator('.map-card', { hasText: 'FSR.001.001' }).click()
   await win.waitForSelector('.map-detail')
-  const pickMs = Date.now() - t0
-  check(pickMs < 1000, '대량: 카드 누르기 → 강조·상세 1초 이내', `${pickMs}ms`)
+  const totalMs = Date.now() - t0
+  await win.waitForFunction(() => window.__pick.shown > 0)
+  const pickMs = await win.evaluate(() => {
+    const p = window.__pick
+    return Math.round(p.shown - p.click)
+  })
+  check(
+    pickMs >= 0 && pickMs < 1000,
+    '대량: 카드 누르기 → 강조·상세 1초 이내 (앱 반응 시간)',
+    `${pickMs}ms · 클릭 동작 포함 ${totalMs}ms · 알림 ${pre.toasts}개${pre.covered ? ` · 누르기 전 카드를 가린 것: ${pre.covered}` : ''}`
+  )
   await win.screenshot({ path: screenshotPath.replace(/\.png$/, '-map-large.png') })
   t0 = Date.now()
   await win.locator('.menu-item', { hasText: '산출물 일정' }).click()

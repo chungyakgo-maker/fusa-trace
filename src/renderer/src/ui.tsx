@@ -63,11 +63,21 @@ export function useToast(): ToastApi {
   return useContext(ToastContext)
 }
 
+const MAX_TOASTS = 3
+
 export function ToastProvider({ children }: { children: ReactNode }): ReactElement {
   const [toasts, setToasts] = useState<Toast[]>([])
   const show = useCallback((kind: Toast['kind'], text: string, action?: Toast['action']) => {
     const id = Date.now() + Math.random()
-    setToasts((t) => [...t, { id, kind, text, action }])
+    // 최대 3개까지만 쌓음 (넘치면 오래된 성공 알림부터 지움) → 알림이 화면을 오래 가리지 않게
+    setToasts((t) => {
+      const next = [...t, { id, kind, text, action }]
+      while (next.length > MAX_TOASTS) {
+        const i = next.findIndex((x) => x.kind !== 'error')
+        next.splice(i >= 0 ? i : 0, 1)
+      }
+      return next
+    })
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), kind === 'error' ? 12_000 : 6_000)
   }, [])
   return (
