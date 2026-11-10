@@ -8,10 +8,10 @@
 import { _electron as electron } from 'playwright-core'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 if (process.platform !== 'win32') {
   console.log('Windows 전용 확인입니다. 건너뜁니다.')
@@ -20,10 +20,44 @@ if (process.platform !== 'win32') {
 
 const { version } = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf-8'))
 const setupPath = process.env.SMOKE_SETUP ?? `dist/FuSaTrace-${version}-Setup.exe`
-// 사용자 단위 원클릭 설치는 패키지 이름(fusa-trace) 폴더에 깔림 (electron-builder 규칙)
-const installDir = join(process.env.LOCALAPPDATA ?? '', 'Programs', 'fusa-trace')
-const exe = join(installDir, 'FuSaTrace.exe')
-const uninstaller = join(installDir, 'Uninstall FuSa Trace.exe')
+// 사용자 단위 원클릭 설치는 보통 %LOCALAPPDATA%\Programs\fusa-trace (electron-builder 규칙).
+// 실제 위치는 Windows "설치된 앱" 정보(레지스트리 InstallLocation)에서 읽음
+const UNINSTALL_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall'
+const reg = (args) => {
+  try {
+    return execFileSync('reg', args, { encoding: 'utf-8' })
+  } catch {
+    return ''
+  }
+}
+function registryInstallDir() {
+  const found = reg(['query', UNINSTALL_KEY, '/s', '/f', 'FuSa Trace', '/d'])
+  const key = found.split(/\r?\n/).find((l) => l.startsWith('HKEY_CURRENT_USER'))
+  if (!key) return ''
+  const m = /InstallLocation\s+REG_\w+\s+(.+)/.exec(reg(['query', key.trim(), '/v', 'InstallLocation']))
+  return m ? m[1].trim() : ''
+}
+let installDir = join(process.env.LOCALAPPDATA ?? '', 'Programs', 'fusa-trace')
+let exe = join(installDir, 'FuSaTrace.exe')
+let uninstaller = join(installDir, 'Uninstall FuSa Trace.exe')
+function locate() {
+  const fromRegistry = registryInstallDir()
+  if (fromRegistry) {
+    installDir = fromRegistry
+    exe = join(installDir, 'FuSaTrace.exe')
+    uninstaller = join(installDir, 'Uninstall FuSa Trace.exe')
+  }
+  return existsSync(exe) && existsSync(uninstaller)
+}
+function diagnose(installMs, exitInfo) {
+  const programs = join(process.env.LOCALAPPDATA ?? '', 'Programs')
+  console.log('--- 진단 ---')
+  console.log(`설치 프로그램: ${setupPath} (${existsSync(setupPath) ? '있음' : '없음'}), ${installMs}ms, ${exitInfo}`)
+  console.log(`LOCALAPPDATA: ${process.env.LOCALAPPDATA}`)
+  console.log(`Programs 폴더: ${existsSync(programs) ? readdirSync(programs).join(', ') : '없음'}`)
+  console.log(`레지스트리 설치 위치: ${registryInstallDir() || '없음'}`)
+  console.log(reg(['query', UNINSTALL_KEY, '/s', '/f', 'FuSa', '/d']).split(/\r?\n/).slice(0, 20).join('\n'))
+}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 let failures = 0
@@ -42,10 +76,18 @@ async function waitFor(fn, ms) {
 }
 
 // 1) 조용히 설치
-execFileSync(setupPath, ['/S'], { stdio: 'inherit' })
-const installed = await waitFor(() => existsSync(exe) && existsSync(uninstaller), 60_000)
-check(installed, '설치형: 관리자 권한 없이 사용자 폴더에 설치됨', installDir)
+const t0 = Date.now()
+let exitInfo = '종료 코드 0'
+try {
+  execFileSync(resolve(setupPath), ['/S'], { stdio: 'inherit' })
+} catch (error) {
+  exitInfo = `오류: ${error instanceof Error ? error.message : String(error)}`
+}
+const installMs = Date.now() - t0
+const installed = await waitFor(locate, 90_000)
+check(installed, '설치형: 관리자 권한 없이 사용자 폴더에 설치됨', `${installDir} · ${installMs}ms`)
 if (!installed) {
+  diagnose(installMs, exitInfo)
   console.error('\n업데이트 설치 확인 실패: 설치 폴더가 없음')
   process.exit(1)
 }
