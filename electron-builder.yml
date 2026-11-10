@@ -1,0 +1,59 @@
+# 설치 파일 설정 (electron-builder)
+# 만들어지는 파일 (dist/ 폴더):
+#   FuSaTrace-<버전>-Setup.exe     사용자 단위 설치 (관리자 권한 불필요)
+#   FuSaTrace-<버전>-Portable.exe  설치 없이 실행 (실행할 때마다 임시 폴더에 풀림)
+#   FuSaTrace-<버전>-win-x64.zip   원하는 폴더에 풀고 FuSaTrace.exe 실행
+appId: local.fusatrace.app
+productName: FuSa Trace
+copyright: FuSa Trace
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - out/**
+  - package.json
+  - "!**/*.map"
+
+# 앱에 포함한 글꼴의 라이선스 (SIL OFL 1.1: 글꼴과 함께 배포해야 함)
+extraResources:
+  - from: node_modules/pretendard/dist/LICENSE.txt
+    to: licenses/Pretendard-OFL.txt
+
+asar: true
+npmRebuild: false # 네이티브 모듈 없음
+electronLanguages: [ko, en-US]
+
+# 자동 업데이트 없음: 업데이트 서버 정보를 넣지 않는다
+publish: null
+
+win:
+  executableName: FuSaTrace
+  icon: build/icon.png
+  artifactName: FuSaTrace-${version}-win-${arch}.${ext}
+  verifyUpdateCodeSignature: false
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+    - target: zip
+      arch: [x64]
+
+nsis:
+  artifactName: FuSaTrace-${version}-Setup.${ext}
+  oneClick: true # 더블클릭하면 바로 설치 후 실행
+  perMachine: false # 사용자 단위 설치: %LOCALAPPDATA%\Programs\FuSa Trace
+  allowElevation: false # 관리자 권한 요청 안 함
+  packElevateHelper: false
+  shortcutName: FuSa Trace
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  runAfterFinish: true
+  deleteAppDataOnUninstall: false # 지워도 프로젝트 데이터(%APPDATA%\FuSaTrace)는 남김
+  differentialPackage: false # 업데이트용 조각 파일 만들지 않음
+
+portable:
+  artifactName: FuSaTrace-${version}-Portable.${ext}
+  requestExecutionLevel: user

@@ -1,0 +1,16 @@
+node_modules/
+out/
+dist/
+*.log
+.DS_Store
+Thumbs.db
+
+# 테스트용 가짜 문서는 CI에서 매번 생성 (커밋하지 않음)
+tests/fixtures/generated/
+
+# 실제 회사 문서가 실수로 들어오지 않도록
+*.xlsx
+*.xls
+*.docx
+*.doc
+*.pdf
