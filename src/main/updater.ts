@@ -11,7 +11,7 @@
 import { app, BrowserWindow, session, shell, type Session } from 'electron'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import {
   isAllowedUpdateUrl,
@@ -48,7 +48,14 @@ function errorText(error: unknown): string {
 /** 지금 실행 중인 앱이 설치형·포터블·압축본 중 무엇인지 */
 function detectVariant(): InstallVariant {
   if (process.env['PORTABLE_EXECUTABLE_FILE']) return 'portable'
-  if (process.platform === 'win32' && existsSync(join(dirname(process.execPath), 'Uninstall FuSa Trace.exe'))) return 'setup'
+  // 설치형은 실행 파일 옆에 제거 프로그램이 있음 (electron-builder: "Uninstall FuSaTrace.exe" — 이름은 설정에 따라 다를 수 있어 모양으로 봄)
+  if (process.platform === 'win32') {
+    try {
+      if (readdirSync(dirname(process.execPath)).some((f) => /^Uninstall .+\.exe$/i.test(f))) return 'setup'
+    } catch {
+      // 폴더를 못 읽으면 압축본으로 봄 (받기만 하고 설치 프로그램은 실행하지 않음)
+    }
+  }
   return 'zip'
 }
 
