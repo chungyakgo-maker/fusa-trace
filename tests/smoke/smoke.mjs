@@ -5,6 +5,7 @@
 //   - Chromium 네트워크 기록(--log-net-log)으로 앱 코드 밖의 숨은 요청(맞춤법 사전 등)까지 0건인지
 //   - 프로젝트 만들기 → 가짜 문서 넣기(DRM·미지원·판별 불가 포함) → 가져오기 결과 → 반영 → 산출물 일정
 //     → 엑셀 출력 → 다시 열어도 저장돼 있는지 (먼저 npm run fixtures)
+//   - FSR + TSC → 추적성(누락·없는 ID·ID 중복) → ID 대응표에서 골라 연결 → 대용량 TSC 읽기 시간
 //   - 화면 캡처 저장 (Actions 아티팩트로 올림)
 //
 // 사용법
@@ -129,6 +130,52 @@ try {
   const docsText = await win.locator('main').innerText()
   check(docsText.includes('자동') && docsText.includes('TSC VR'), '문서 관리: VR 파일 ↔ DIA 산출물 자동 연결 표시')
   await win.screenshot({ path: screenshotPath.replace(/\.png$/, '-documents.png') })
+
+  // ── M2: FSR + TSC → 시스템 추적성
+  await app.evaluate(({ dialog }, paths) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: paths })
+  }, [join(FIXTURES, `${P}_FSR_R01.xlsx`), join(FIXTURES, `${P}_기술안전개념서(TSC)_R1.docx`)])
+  await win.getByRole('button', { name: '문서 넣기' }).first().click()
+  await win.waitForFunction(() => document.querySelectorAll('.import-card').length === 2, null, { timeout: 60_000 })
+  const m2Text = await win.locator('dialog.modal').innerText()
+  check(m2Text.includes('FSR 23') && m2Text.includes('TSR 46'), '가져오기 결과: FSR 23개, TSR 46개')
+  check(m2Text.includes('ID 중복'), '가져오기 결과: TSR ID 중복 경고')
+  await win.getByRole('button', { name: /^반영 \(2개\)$/ }).click()
+  await win.waitForSelector('dialog.modal', { state: 'detached' })
+  await win.locator('.menu-item', { hasText: '추적성' }).click()
+  await win.waitForSelector('.stage-cards')
+  const cardsText = await win.locator('.stage-cards').innerText()
+  check(/21\s*\/\s*22/.test(cardsText), '추적성: TSR 연결 21 / 22', cardsText.replace(/\s+/g, ' '))
+  const traceText = await win.locator('main').innerText()
+  check(traceText.includes('누락 1'), '추적성: TSR 없는 FSR 1개 (누락)')
+  check(traceText.includes('없는 FSR 참조: FSR.001.099'), '추적성: 없는 FSR을 가리키는 TSR')
+  check(traceText.includes('ID 중복 (#2/2)'), '추적성: TSR ID 중복 표시')
+  const pill = (await win.locator('.count-pill').count()) > 0 ? (await win.locator('.count-pill').innerText()).trim() : '0'
+  check(pill === '1', 'ID 대응표 메뉴에 확인할 건수 표시', pill)
+  await win.screenshot({ path: screenshotPath.replace(/\.png$/, '-trace.png') })
+
+  // ID 대응표: 없는 ID를 맞는 FSR로 골라 기억
+  await win.locator('.menu-item', { hasText: 'ID 대응표' }).click()
+  await win.getByLabel('FSR.001.099의 대상 고르기').selectOption('FSR.001.011')
+  await win.getByRole('button', { name: '연결 (기억)' }).click()
+  await win.waitForFunction(() => document.querySelectorAll('.count-pill').length === 0)
+  check(true, 'ID 대응표: 고르면 확인 건수가 사라짐')
+  await win.screenshot({ path: screenshotPath.replace(/\.png$/, '-idmap.png') })
+  await win.locator('.menu-item', { hasText: '추적성' }).click()
+  const cardsAfter = await win.locator('.stage-cards').innerText()
+  check(/22\s*\/\s*22/.test(cardsAfter), '추적성: 별칭으로 연결되어 22 / 22', cardsAfter.replace(/\s+/g, ' '))
+
+  // 대용량 TSC (본문 XML 약 20MB, TSR 320개) 읽기 시간 — 반영하지 않고 취소
+  await app.evaluate(({ dialog }, paths) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: paths })
+  }, [join(FIXTURES, `${P}_기술안전개념서_대용량(TSC)_R1.docx`)])
+  await win.getByRole('button', { name: '문서 넣기' }).first().click()
+  await win.waitForSelector('.import-card', { timeout: 60_000 })
+  const bigText = await win.locator('dialog.modal').innerText()
+  const secs = Number(/(\d+\.\d)초/.exec(bigText)?.[1] ?? 'NaN')
+  check(bigText.includes('TSR 320') && secs < 10, '대용량 TSC(20MB, TSR 320개) 10초 안에 읽음', `${secs}초`)
+  await win.getByRole('button', { name: '취소' }).click()
+
 
   // 지금까지(시작 ~ 메뉴 클릭) 나간 요청: 모두 앱 내부(file: 등)여야 함
   const startupLog = (await app.evaluate(() => globalThis.__fusaNetLog)) ?? []

@@ -1,7 +1,8 @@
-/** 추적성 화면용 계산 (M2에서 채움) */
+/** 추적성 화면용 계산 */
 import type { Project } from '../../core/model'
+import { computeSystemTrace, pendingCount } from '../../core/trace'
 
-/** ID 대응표의 확인 필요 건수 (메뉴 옆 숫자) */
-export function pendingReviewCount(_p: Project): number {
-  return 0
+/** ID 대응표의 사람이 골라야 하는 건수 (메뉴 옆 숫자) */
+export function pendingReviewCount(p: Project): number {
+  return pendingCount(computeSystemTrace(p))
 }
