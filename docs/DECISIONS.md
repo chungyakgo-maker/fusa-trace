@@ -122,3 +122,5 @@ SPEC·FORMATS와 다르게 하거나, 문서에 없던 것을 정한 내용을 �
 - **새 버전 판단**: 태그 `v<숫자>.<숫자>.<숫자>`만, 숫자로 비교. 모양이 다른 태그는 새 버전으로 보지 않음
 - **실행 확인 테스트는 가짜 GitHub(127.0.0.1)로**: `FUSA_UPDATE_API`는 내 PC의 http 주소만 받아들임(그 외 값은 무시).
   Windows CI에서는 실제 Setup.exe를 설치한 뒤 앱에서 업데이트 → 덮어 설치 → 앱이 다시 켜지는 것까지 확인
+- **설치 폴더는 `%LOCALAPPDATA%\Programs\fusa-trace`**: electron-builder의 사용자 단위 원클릭 설치는 제품 이름이 아니라 패키지 이름 폴더를 씀
+  (업데이트 설치 확인 테스트로 발견, README의 "FuSa Trace" 폴더 안내를 고침). 제거 프로그램 이름은 `Uninstall FuSa Trace.exe`

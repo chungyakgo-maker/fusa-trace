@@ -45,7 +45,7 @@ win:
 nsis:
   artifactName: FuSaTrace-${version}-Setup.${ext}
   oneClick: true # 더블클릭하면 바로 설치 후 실행
-  perMachine: false # 사용자 단위 설치: %LOCALAPPDATA%\Programs\FuSa Trace
+  perMachine: false # 사용자 단위 설치: %LOCALAPPDATA%\Programs\fusa-trace (원클릭은 패키지 이름 폴더)
   allowElevation: false # 관리자 권한 요청 안 함
   packElevateHelper: false
   shortcutName: FuSa Trace

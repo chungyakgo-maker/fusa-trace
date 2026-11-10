@@ -15,7 +15,7 @@
 
 - 코드 서명이 없어서 처음 실행할 때 "Windows의 PC 보호" 창이 뜰 수 있습니다 → **추가 정보 → 실행**
 - 개발 중인 최신 빌드는 **Actions** 탭 → 가장 위의 초록색 실행 → 아래쪽 **Artifacts**에서 받을 수 있습니다 (GitHub 로그인 필요).
-- 설치 위치: `%LOCALAPPDATA%\Programs\FuSa Trace` / 데이터: `%APPDATA%\FuSaTrace`
+- 설치 위치: `%LOCALAPPDATA%\Programs\fusa-trace` / 데이터: `%APPDATA%\FuSaTrace`
 - 지우기: Windows 설정 → 앱 → 설치된 앱 → FuSa Trace → 제거 (데이터 폴더는 남습니다)
 
 ## 업데이트 (v0.6.0부터)

@@ -1,5 +1,5 @@
 // 설치형 업데이트 확인 (Windows 전용, Actions에서 실행)
-//   1) 이번에 만든 Setup.exe를 조용히 설치 (%LOCALAPPDATA%\Programs\FuSa Trace)
+//   1) 이번에 만든 Setup.exe를 조용히 설치 (%LOCALAPPDATA%\Programs\fusa-trace)
 //   2) 설치된 앱을 띄움. 가짜 GitHub(내 PC)가 "v99.0.0"이라며 같은 Setup.exe를 줌
 //   3) 앱을 켜면 자동 확인 → 알림 띠 [업데이트] → 받기·확인값 → [지금 설치하고 다시 시작]
 //      → 앱이 닫히고, 설치 프로그램이 조용히 덮어 설치한 뒤 앱을 다시 켜는지
@@ -20,7 +20,8 @@ if (process.platform !== 'win32') {
 
 const { version } = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf-8'))
 const setupPath = process.env.SMOKE_SETUP ?? `dist/FuSaTrace-${version}-Setup.exe`
-const installDir = join(process.env.LOCALAPPDATA ?? '', 'Programs', 'FuSa Trace')
+// 사용자 단위 원클릭 설치는 패키지 이름(fusa-trace) 폴더에 깔림 (electron-builder 규칙)
+const installDir = join(process.env.LOCALAPPDATA ?? '', 'Programs', 'fusa-trace')
 const exe = join(installDir, 'FuSaTrace.exe')
 const uninstaller = join(installDir, 'Uninstall FuSa Trace.exe')
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -42,7 +43,12 @@ async function waitFor(fn, ms) {
 
 // 1) 조용히 설치
 execFileSync(setupPath, ['/S'], { stdio: 'inherit' })
-check(await waitFor(() => existsSync(exe) && existsSync(uninstaller), 60_000), '설치형: 관리자 권한 없이 사용자 폴더에 설치됨', installDir)
+const installed = await waitFor(() => existsSync(exe) && existsSync(uninstaller), 60_000)
+check(installed, '설치형: 관리자 권한 없이 사용자 폴더에 설치됨', installDir)
+if (!installed) {
+  console.error('\n업데이트 설치 확인 실패: 설치 폴더가 없음')
+  process.exit(1)
+}
 const firstInstall = statSync(uninstaller).mtimeMs
 
 // 2) 가짜 GitHub: v99.0.0 = 같은 Setup.exe
