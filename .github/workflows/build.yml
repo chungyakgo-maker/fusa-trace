@@ -1,13 +1,13 @@
-# 테스트 → Windows 설치 파일 빌드 → 실행 확인 → (태그면) Release
+# 테스트 → Windows 설치 파일 빌드 → 실행 확인 → (새 버전이면) Release
 #
-# - main에 push / Pull Request / 수동 실행: 테스트 + 설치 파일 빌드 → Actions 아티팩트
-# - v로 시작하는 태그(v0.0.1 등) push: 위와 같고, Release 페이지에도 설치 파일을 올림
+# - push / Pull Request / 수동 실행: 테스트 + 설치 파일 빌드 + 실행 확인 → Actions 아티팩트
+# - main에서, package.json 버전(v0.0.1 등)의 Release가 아직 없으면: Release와 태그를 만들어 설치 파일을 올림
+#   → 마일스톤이 끝나면 package.json 버전을 올려서 main에 push하면 된다 (태그를 직접 push하지 않음)
 name: build
 
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -48,6 +48,8 @@ jobs:
     name: Windows 설치 파일 빌드 · 실행 확인
     needs: test
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
     defaults:
       run:
         shell: bash
@@ -64,10 +66,6 @@ jobs:
         run: |
           version=$(node -p "require('./package.json').version")
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          if [[ "$GITHUB_REF" == refs/tags/v* && "${GITHUB_REF_NAME#v}" != "$version" ]]; then
-            echo "::error::태그($GITHUB_REF_NAME)와 package.json 버전($version)이 다릅니다"
-            exit 1
-          fi
 
       - name: 패키지 설치
         run: npm ci
@@ -135,13 +133,27 @@ jobs:
 
   release:
     name: Release 올리기
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: windows
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: v${{ needs.windows.outputs.version }}
     steps:
+      - name: 이미 있는 버전인지 확인
+        id: check
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "::notice::$TAG Release가 이미 있어서 건너뜁니다. 새 Release를 만들려면 package.json 버전을 올리세요."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: 설치 파일 받기
+        if: steps.check.outputs.exists == 'false'
         uses: actions/download-artifact@v8
         with:
           pattern: FuSaTrace-*
@@ -149,13 +161,12 @@ jobs:
           merge-multiple: true
 
       - name: Release 만들기
-        env:
-          GH_TOKEN: ${{ github.token }}
+        if: steps.check.outputs.exists == 'false'
         run: |
           cd release
           ls -la
           sha256sum *.exe *.zip > SHA256SUMS.txt
-          v="${GITHUB_REF_NAME#v}"
+          v="${TAG#v}"
           cat > notes.md <<EOF
           ## 설치 파일 (하나만 받으면 됩니다)
 
@@ -169,8 +180,9 @@ jobs:
           - 앱은 인터넷에 연결하지 않습니다 (자동 업데이트·통계 수집 없음).
           - \`SHA256SUMS.txt\`: 파일이 손상되지 않았는지 확인하는 값입니다.
           EOF
-          gh release create "$GITHUB_REF_NAME" \
+          gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "FuSa Trace ${GITHUB_REF_NAME}" \
+            --target "$GITHUB_SHA" \
+            --title "FuSa Trace $TAG" \
             --notes-file notes.md \
             ./*.exe ./*.zip SHA256SUMS.txt

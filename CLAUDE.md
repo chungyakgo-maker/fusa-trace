@@ -22,6 +22,7 @@
 - `docs/SPEC.md` §13의 마일스톤(M0 → M5) 순서로 진행합니다.
 - **각 마일스톤 시작 전에 계획(만들 것, 바뀌는 파일, 완료 기준)을 보여 주고 확인받은 뒤** 진행합니다.
 - 마일스톤이 끝나면: 테스트 통과 확인 → 설치 파일 빌드 → 사용자가 회사 PC에서 확인할 항목을 체크리스트로 안내합니다.
+  - Release는 `package.json` 버전을 올려 main에 push하면 Actions가 만듭니다 (태그를 직접 push하지 않음 — 막혀 있음).
 - 결정한 내용은 `docs/DECISIONS.md`에 날짜와 함께 짧게 남깁니다.
 
 ## 반드시 지킬 것
@@ -46,7 +47,7 @@
 ## 저장소 구조 (제안)
 
 ```
-.github/workflows/   build.yml (push: 테스트 + 설치 파일 빌드·실행 확인 / tag: + Release)
+.github/workflows/   build.yml (push: 테스트 + 설치 파일 빌드·실행 확인 / main에서 새 버전이면 Release)
 docs/                SPEC.md, FORMATS.md, DECISIONS.md
 scripts/             가짜 테스트 문서 생성
 src/main/            Electron 메인 (파일 열기, 저장)

@@ -16,19 +16,23 @@ if (netLog) (globalThis as { __fusaNetLog?: NetLogEntry[] }).__fusaNetLog = netL
 function lockDownSession(): void {
   const ses = session.defaultSession
 
-  // 1) 외부로 나가는 모든 요청 차단 (화면의 CSP와 별개인 두 번째 방어선)
+  // 1) 맞춤법 사전 다운로드 방지 — 가장 먼저.
+  //    Electron은 맞춤법 검사를 꺼도 시작할 때 사전(en-US)을 Google 서버(redirector.gvt1.com)에서
+  //    받으려 한다. 이 요청은 아래 요청 차단기에 보이지 않으므로, 사전 언어 목록을 비워서 아예 시작하지 않게 한다.
+  //    (실행 확인 테스트가 Chromium 네트워크 기록으로 이 요청이 없는지 검사한다)
+  ses.setSpellCheckerLanguages([])
+  ses.setSpellCheckerEnabled(false)
+
+  // 2) 외부로 나가는 모든 요청 차단 (화면의 CSP와 별개인 두 번째 방어선)
   ses.webRequest.onBeforeRequest((details, callback) => {
     const allowed = isAllowedUrl(details.url, DEV_SERVER_URL)
     if (netLog && netLog.length < 500) netLog.push({ url: details.url.slice(0, 200), allowed })
     callback({ cancel: !allowed })
   })
 
-  // 2) 카메라·알림·위치 같은 권한 요청은 모두 거절
+  // 3) 카메라·알림·위치 같은 권한 요청은 모두 거절
   ses.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
   ses.setPermissionCheckHandler(() => false)
-
-  // 3) 맞춤법 사전 다운로드 방지
-  ses.setSpellCheckerEnabled(false)
 }
 
 function createWindow(): BrowserWindow {
