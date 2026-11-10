@@ -24,4 +24,6 @@ SPEC·FORMATS와 다르게 하거나, 문서에 없던 것을 정한 내용을 �
   받으려 함. 이 접속은 앱의 요청 차단기에 보이지 않음 → 사전 언어 목록을 비워서(`setSpellCheckerLanguages([])`) 시작하지 않게 함
   - 실행 확인 테스트에 Chromium 네트워크 기록(`--log-net-log`) 검사를 추가: 앱 코드 밖의 숨은 접속까지 0건이어야 통과.
     고치기 전 코드로 돌리면 이 검사가 `redirector.gvt1.com`으로 실패하는 것을 확인함
+- **프록시 사용 안 함** (`--no-proxy-server`): Windows에서 Chromium이 "프록시 자동 검색"(WPAD)으로 내부망의
+  `wpad` 서버를 찾으려 하는 것을 위 검사가 잡음. 앱은 어떤 서버에도 접속하지 않으므로 프록시 조회 자체를 끔
 - **버전**: M0 = `0.0.1`. 마일스톤이 끝나면 package.json 버전을 올려 main에 push → Release 자동 생성

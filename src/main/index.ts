@@ -8,6 +8,10 @@ const DEV_SERVER_URL = process.env['ELECTRON_RENDERER_URL']
 // 데이터 폴더: %APPDATA%/FuSaTrace (SPEC §3). 앱 준비 전에 정해야 한다.
 app.setPath('userData', join(app.getPath('appData'), 'FuSaTrace'))
 
+// 프록시를 쓰지 않는다. 앱은 어떤 서버에도 접속하지 않는데, 기본값이면 Chromium이 Windows의
+// "프록시 자동 검색"(WPAD: 회사망에서 wpad 서버를 찾아 설정 파일을 받음)을 시도한다. 앱 준비 전에 정해야 한다.
+app.commandLine.appendSwitch('no-proxy-server')
+
 // 실행 확인(smoke) 테스트에서만 요청 기록을 남긴다. 주소만 기록하고 문서 내용은 기록하지 않는다.
 type NetLogEntry = { url: string; allowed: boolean }
 const netLog: NetLogEntry[] | undefined = process.env['FUSA_SMOKE'] === '1' ? [] : undefined
