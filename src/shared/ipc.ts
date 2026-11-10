@@ -58,7 +58,7 @@ export interface FusaApi {
     /** 파일 읽기 (작업 스레드) */
     read(requests: ReadRequest[]): Promise<ParsedDocument[]>
   }
-  exportSchedule(project: Project, today: IsoDate): Promise<ExportResult>
+  exportSchedule(project: Project, today: IsoDate, options: { includeTrace: boolean }): Promise<ExportResult>
   showInFolder(path: string): Promise<void>
   appInfo(): Promise<AppInfo>
 }

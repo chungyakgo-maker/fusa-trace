@@ -1613,3 +1613,15 @@ input[type='date'] {
   color: var(--late);
   font-weight: 600;
 }
+.export-sheets {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.export-sheets label {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+}

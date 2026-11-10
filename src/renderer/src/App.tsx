@@ -11,7 +11,7 @@ import { SettingsPage } from './SettingsPage'
 import { TracePage } from './TracePage'
 import { IdMapPage } from './IdMapPage'
 import { ProjectPicker } from './ProjectPicker'
-import { ToastProvider, useToast } from './ui'
+import { Modal, ToastProvider, useToast } from './ui'
 import { pendingReviewCount } from './traceView'
 
 export function App(): ReactElement {
@@ -31,6 +31,8 @@ function Shell(): ReactElement {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
+  const [includeTrace, setIncludeTrace] = useState(true)
 
   useEffect(() => {
     void window.fusa.projects.last().then((p) => {
@@ -73,8 +75,9 @@ function Shell(): ReactElement {
 
   const exportExcel = async (): Promise<void> => {
     if (!project) return
+    setExportOpen(false)
     setExporting(true)
-    const r = await window.fusa.exportSchedule(project, today)
+    const r = await window.fusa.exportSchedule(project, today, { includeTrace })
     setExporting(false)
     if (r.ok && r.path) {
       const path = r.path
@@ -185,7 +188,7 @@ function Shell(): ReactElement {
             <h1>{current.label}</h1>
           </div>
           <div className="actions">
-            <button type="button" className="btn" disabled={!hasDia || exporting} onClick={() => void exportExcel()} title={hasDia ? undefined : 'DIA를 먼저 넣어 주세요'}>
+            <button type="button" className="btn" disabled={!hasDia || exporting} onClick={() => setExportOpen(true)} title={hasDia ? undefined : 'DIA를 먼저 넣어 주세요'}>
               <DownloadIcon />
               {exporting ? '만드는 중…' : '엑셀 출력'}
             </button>
@@ -213,6 +216,36 @@ function Shell(): ReactElement {
       )}
 
       {importPaths && <ImportDialog project={project} paths={importPaths} onApply={applyImport} onClose={() => setImportPaths(null)} />}
+
+      {exportOpen && (
+        <Modal
+          title="엑셀 출력"
+          onClose={() => setExportOpen(false)}
+          footer={
+            <>
+              <button type="button" className="btn" onClick={() => setExportOpen(false)}>
+                취소
+              </button>
+              <button type="button" className="btn btn-primary" onClick={() => void exportExcel()}>
+                저장할 곳 고르기
+              </button>
+            </>
+          }
+        >
+          <p>
+            파일 이름: <span className="mono small">{project.name}_산출물작성리스트_{today.replace(/-/g, '')}.xlsx</span>
+          </p>
+          <ul className="export-sheets">
+            <li>시트 1 "작성 리스트" — DIA 산출물별 담당·일정·상태·등록 문서·VR</li>
+            <li>시트 2 "담당자별 요약" — 지연 많은 순</li>
+            <li>
+              <label>
+                <input type="checkbox" checked={includeTrace} onChange={(e) => setIncludeTrace(e.target.checked)} /> 시트 3 "추적성 누락" 포함 — 누락·확인 필요 항목 (단계, ID, 문제, 출처 문서)
+              </label>
+            </li>
+          </ul>
+        </Modal>
+      )}
 
       {pickerOpen && (
         <ProjectPicker

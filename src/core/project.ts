@@ -48,7 +48,8 @@ export function toSourceDoc(parsed: ParsedDocument, kind: DocKind, id: string, n
     active: true,
     report: parsed.report,
     ...(parsed.dia ? { dia: parsed.dia } : {}),
-    ...(parsed.items ? { items: parsed.items } : {})
+    ...(parsed.items ? { items: parsed.items } : {}),
+    ...(parsed.meta ? { meta: parsed.meta } : {})
   }
 }
 

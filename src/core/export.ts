@@ -5,9 +5,18 @@ import ExcelJS from 'exceljs'
 import type { IsoDate, Project } from './model'
 import { assigneeText, computeSchedule, ddayText, summarize, summarizeByOwner, type ScheduleRow } from './schedule'
 import { compactDate } from './dates'
+import { computeSystemTrace } from './trace'
+import { computeSoftwareTrace } from './software'
+import { collectTraceIssues } from './issues'
 
 export const SHEET_LIST = '작성 리스트'
 export const SHEET_OWNERS = '담당자별 요약'
+export const SHEET_TRACE = '추적성 누락'
+
+export interface ExportOptions {
+  /** 시트 3 "추적성 누락" 포함 */
+  includeTrace: boolean
+}
 
 const COLORS = {
   headerFill: 'FFE8ECF3',
@@ -71,7 +80,7 @@ function registeredText(r: ScheduleRow): string {
   return `${r.doc.fileName} (${r.doc.version || '버전 없음'}, ${r.doc.importedAt.slice(0, 10)} 등록)`
 }
 
-export async function buildScheduleWorkbook(p: Project, today: IsoDate, exportDate: IsoDate): Promise<ExcelJS.Workbook> {
+export async function buildScheduleWorkbook(p: Project, today: IsoDate, exportDate: IsoDate, options: ExportOptions = { includeTrace: false }): Promise<ExcelJS.Workbook> {
   const rows = computeSchedule(p, today)
   const s = summarize(rows)
   const wb = new ExcelJS.Workbook()
@@ -142,11 +151,27 @@ export async function buildScheduleWorkbook(p: Project, today: IsoDate, exportDa
   os.views = [{ state: 'frozen', ySplit: 1, xSplit: 0 }]
   os.autoFilter = { from: { row: 1, column: 1 }, to: { row: Math.max(1, os.rowCount), column: 7 } }
   autoWidth(os, 1, 8, 40)
+
+  // ── 시트 3: 추적성 누락 (선택)
+  if (options.includeTrace) {
+    const issues = collectTraceIssues(computeSystemTrace(p), computeSoftwareTrace(p))
+    const ts = wb.addWorksheet(SHEET_TRACE, { pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 } })
+    styleHeader(ts.addRow(['단계', '항목 ID', '제목', '문제 종류', '출처 문서']))
+    for (const i of issues) {
+      const row = ts.addRow([i.stage, i.id, i.title, i.problem, i.source])
+      row.getCell(3).alignment = { wrapText: true, vertical: 'top' }
+      if (i.problem.startsWith('누락') || i.problem.startsWith('없는') || i.problem.includes('TSR 없음') || i.problem.includes('TSR 연결 없음')) paint(row.getCell(4), COLORS.delayed)
+    }
+    if (issues.length === 0) ts.addRow(['', '', '누락·확인 필요 항목이 없습니다', '', ''])
+    ts.views = [{ state: 'frozen', ySplit: 1, xSplit: 0 }]
+    ts.autoFilter = { from: { row: 1, column: 1 }, to: { row: Math.max(1, ts.rowCount), column: 5 } }
+    autoWidth(ts, 1, 8, 60)
+  }
   return wb
 }
 
-export async function buildScheduleXlsx(p: Project, today: IsoDate, exportDate: IsoDate): Promise<Uint8Array> {
-  const wb = await buildScheduleWorkbook(p, today, exportDate)
+export async function buildScheduleXlsx(p: Project, today: IsoDate, exportDate: IsoDate, options?: ExportOptions): Promise<Uint8Array> {
+  const wb = await buildScheduleWorkbook(p, today, exportDate, options)
   const buf = await wb.xlsx.writeBuffer()
   return new Uint8Array(buf as ArrayBuffer)
 }

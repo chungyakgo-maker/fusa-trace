@@ -1,13 +1,15 @@
 /** ID 대응표 (SPEC §9.3): 확인 필요 / 없는 ID / 약식 표기로 자동 연결된 참조, 사람이 고른 별칭 */
 import { useMemo, useState, type ReactElement } from 'react'
-import type { Alias, Project, TraceItem } from '../../core/model'
-import { computeSystemTrace, type RefLink } from '../../core/trace'
+import type { Alias, DocKind, Project, TraceItem } from '../../core/model'
+import { computeSystemTrace, sourceKindOf, type RefLink } from '../../core/trace'
+import { computeSoftwareTrace } from '../../core/software'
 import { itemKey } from '../../core/project'
 import { shortText } from '../../core/text'
 import { TrashIcon } from './icons'
 import { EmptyState, TraceBadge } from './ui'
 
 interface RefGroup {
+  sourceKind: DocKind
   norm: string
   ref: string
   method: RefLink['resolution']['method']
@@ -19,8 +21,9 @@ interface RefGroup {
 function groupLinks(links: RefLink[]): RefGroup[] {
   const map = new Map<string, RefGroup>()
   for (const l of links) {
-    const k = `${l.resolution.method}|${l.resolution.norm}`
-    const g = map.get(k) ?? { norm: l.resolution.norm, ref: l.resolution.ref, method: l.resolution.method, reason: l.resolution.reason, from: [], targets: l.resolution.targets }
+    const sourceKind = sourceKindOf(l.from)
+    const k = `${sourceKind}|${l.resolution.method}|${l.resolution.norm}`
+    const g = map.get(k) ?? { sourceKind, norm: l.resolution.norm, ref: l.resolution.ref, method: l.resolution.method, reason: l.resolution.reason, from: [], targets: l.resolution.targets }
     if (!g.from.includes(l.from)) g.from.push(l.from)
     map.set(k, g)
   }
@@ -28,12 +31,15 @@ function groupLinks(links: RefLink[]): RefGroup[] {
 }
 
 function label(item: TraceItem): string {
+  if (item.kind === 'FMEA_CAUSE') return item.location
   return `${item.rawId}${item.dupCount > 1 ? ` (중복 #${item.dupIndex})` : ''}`
 }
 
+const SOURCE_LABEL: Partial<Record<DocKind, string>> = { TSC: 'TSC → FSR', FMEA: 'FMEA → TSR', SRS: 'SRS → TSR' }
+
 function Picker({ group, options, onSave }: { group: RefGroup; options: TraceItem[]; onSave: (target: TraceItem) => void }): ReactElement {
   const [choice, setChoice] = useState('')
-  const name = `pick-${group.method}-${group.norm}`
+  const name = `pick-${group.sourceKind}-${group.method}-${group.norm}`
   if (options.length <= 6) {
     return (
       <fieldset className="pick">
@@ -71,17 +77,23 @@ function Picker({ group, options, onSave }: { group: RefGroup; options: TraceIte
 
 export function IdMapPage({ project, onChange }: { project: Project; onChange: (p: Project) => void }): ReactElement {
   const trace = useMemo(() => computeSystemTrace(project), [project])
-  const groups = useMemo(() => groupLinks(trace.links.filter((l) => l.resolution.method !== 'exact' && l.resolution.method !== 'normalized')), [trace])
+  const sw = useMemo(() => computeSoftwareTrace(project), [project])
+  const groups = useMemo(
+    () => groupLinks([...trace.links, ...sw.links].filter((l) => l.resolution.method !== 'exact' && l.resolution.method !== 'normalized')),
+    [trace, sw]
+  )
   const allFsrs = trace.fsrs.map((f) => f.item)
-  const byKey = new Map(allFsrs.map((f) => [itemKey(f), f]))
+  const allTsrs = trace.tsrs.map((t) => t.item)
+  const byKey = new Map([...allFsrs, ...allTsrs].map((f) => [`${f.kind}:${itemKey(f)}`, f]))
+  const optionsFor = (g: RefGroup): TraceItem[] => (g.sourceKind === 'TSC' ? allFsrs : allTsrs)
 
   const saveAlias = (g: RefGroup, target: TraceItem): void => {
-    const alias: Alias = { sourceKind: 'TSC', ref: g.norm, target: itemKey(target), createdAt: new Date().toISOString() }
-    onChange({ ...project, aliases: [...project.aliases.filter((a) => !(a.sourceKind === 'TSC' && a.ref === g.norm)), alias] })
+    const alias: Alias = { sourceKind: g.sourceKind, ref: g.norm, target: itemKey(target), createdAt: new Date().toISOString() }
+    onChange({ ...project, aliases: [...project.aliases.filter((a) => !(a.sourceKind === g.sourceKind && a.ref === g.norm)), alias] })
   }
 
   if (!trace.hasTsc) {
-    return <EmptyState title="TSC를 넣으면 ID 대응표가 채워집니다">TSR의 Ref ID에 적힌 FSR 참조 중 애매하거나 없는 것을 여기서 골라 기억합니다.</EmptyState>
+    return <EmptyState title="TSC를 넣으면 ID 대응표가 채워집니다">TSC(→ FSR), FMEA·SRS(→ TSR)에 적힌 참조 중 애매하거나 없는 것을 여기서 골라 기억합니다.</EmptyState>
   }
 
   const ambiguous = groups.filter((g) => g.method === 'ambiguous')
@@ -104,14 +116,16 @@ export function IdMapPage({ project, onChange }: { project: Project; onChange: (
         <table className="trace-table">
           <thead>
             <tr>
+              <th scope="col">문서</th>
               <th scope="col">적힌 참조</th>
-              <th scope="col">참조한 TSR</th>
+              <th scope="col">참조한 항목</th>
               <th scope="col">연결</th>
             </tr>
           </thead>
           <tbody>
             {list.map((g) => (
-              <tr key={`${g.method}-${g.norm}`}>
+              <tr key={`${g.sourceKind}-${g.method}-${g.norm}`}>
+                <td className="small">{SOURCE_LABEL[g.sourceKind] ?? g.sourceKind}</td>
                 <td className="mono">{g.ref}</td>
                 <td className="mono small">
                   {g.from.slice(0, 8).map((f) => (
@@ -144,12 +158,12 @@ export function IdMapPage({ project, onChange }: { project: Project; onChange: (
       )}
       {section(
         '없는 ID 참조',
-        'FSR 문서에 없는 ID를 가리킵니다. 오타나 옛 ID라면 맞는 FSR을 골라 연결할 수 있습니다. 실제로 없는 요구라면 문서를 고쳐야 합니다.',
+        '정의 문서(FSR·TSC)에 없는 ID를 가리킵니다. 오타나 옛 ID라면 맞는 대상을 골라 연결할 수 있습니다. 실제로 없는 요구라면 문서를 고쳐야 합니다.',
         missing,
         (g) => (
           <>
             <TraceBadge status="누락" text="없는 ID" />
-            <Picker group={g} options={allFsrs} onSave={(t) => saveAlias(g, t)} />
+            <Picker group={g} options={optionsFor(g)} onSave={(t) => saveAlias(g, t)} />
           </>
         ),
         '없는 ID 참조가 없습니다.'
@@ -192,7 +206,7 @@ export function IdMapPage({ project, onChange }: { project: Project; onChange: (
             </thead>
             <tbody>
               {project.aliases.map((a) => {
-                const target = byKey.get(a.target)
+                const target = byKey.get(`${a.sourceKind === 'TSC' ? 'FSR' : 'TSR'}:${a.target}`)
                 return (
                   <tr key={`${a.sourceKind}-${a.ref}`}>
                     <td>{a.sourceKind}</td>

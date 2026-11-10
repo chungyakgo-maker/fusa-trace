@@ -1,5 +1,5 @@
 /** 추적성 (SPEC §9.1): 시스템 / 소프트웨어 / 하드웨어 탭. M2: 시스템 탭 단계 카드 + 목록 보기 (연결 지도는 M3) */
-import { Fragment, useMemo, useState, type ReactElement } from 'react'
+import { Fragment, useCallback, useMemo, useState, type ReactElement } from 'react'
 import type { Project, TraceItem } from '../../core/model'
 import { computeSystemTrace, TRACE_STATUSES, type FsrRow, type StageCard, type SystemTrace, type TraceStatus, type TsrRow } from '../../core/trace'
 import { ORIGIN_LABEL } from '../../core/fsr'
@@ -7,7 +7,10 @@ import { isResolved } from '../../core/resolve'
 import { shortText } from '../../core/text'
 import { Disclosure, EmptyState, TraceBadge } from './ui'
 import { TraceMap } from './TraceMap'
-import { UNKNOWN_BLOCK } from '../../core/traceMap'
+import { buildTraceMap, UNKNOWN_BLOCK, type MapOptions } from '../../core/traceMap'
+import { buildSoftwareMap, GENERAL_BLOCK, NO_TSR_BLOCK } from '../../core/softwareMap'
+import { computeSoftwareTrace, type SoftwareTrace, type SsrRow, type SwTsrRow } from '../../core/software'
+import { sgNumber } from '../../core/ids'
 
 type Tab = 'system' | 'software' | 'hardware'
 const TABS: { id: Tab; label: string; sub: string }[] = [
@@ -66,6 +69,7 @@ const STATUS_ORDER: Record<TraceStatus, number> = { 누락: 0, '확인 필요': 
 export function TracePage({ project, onImport, onGoIdMap }: { project: Project; onImport: () => void; onGoIdMap: () => void }): ReactElement {
   const [tab, setTab] = useState<Tab>('system')
   const trace = useMemo(() => computeSystemTrace(project), [project])
+  const sw = useMemo(() => computeSoftwareTrace(project), [project])
 
   return (
     <div className="page-stack">
@@ -78,18 +82,19 @@ export function TracePage({ project, onImport, onGoIdMap }: { project: Project; 
         ))}
       </div>
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
-        {tab === 'system' && <SystemTab trace={trace} onImport={onImport} onGoIdMap={onGoIdMap} />}
-        {tab === 'software' && <SoftwareTab trace={trace} />}
+        {tab === 'system' && <SystemTab trace={trace} sw={sw} onImport={onImport} onGoIdMap={onGoIdMap} />}
+        {tab === 'software' && <SoftwareTab sys={trace} sw={sw} onImport={onImport} onGoIdMap={onGoIdMap} />}
         {tab === 'hardware' && <HardwareTab trace={trace} onImport={onImport} />}
       </div>
     </div>
   )
 }
 
-function SystemTab({ trace, onImport, onGoIdMap }: { trace: SystemTrace; onImport: () => void; onGoIdMap: () => void }): ReactElement {
+function SystemTab({ trace, sw, onImport, onGoIdMap }: { trace: SystemTrace; sw: SoftwareTrace; onImport: () => void; onGoIdMap: () => void }): ReactElement {
   const [sg, setSg] = useState('전체')
   const [status, setStatus] = useState<TraceStatus | '전체'>('전체')
   const [view, setView] = useState<'map' | 'list'>('map')
+  const build = useCallback((o: MapOptions) => buildTraceMap(trace, o), [trace])
 
   if (!trace.hasFsr && !trace.hasTsc) {
     return (
@@ -163,7 +168,7 @@ function SystemTab({ trace, onImport, onGoIdMap }: { trace: SystemTrace; onImpor
           </div>
         </div>
         {view === 'map' ? (
-          <TraceMap trace={trace} sg={sg === '전체' ? 'all' : sg === '(SG 없음)' ? UNKNOWN_BLOCK : sg} onGoIdMap={onGoIdMap} />
+          <TraceMap build={build} sys={trace} sw={sw} sg={sg === '전체' ? 'all' : sg === '(SG 없음)' ? UNKNOWN_BLOCK : sg} onGoIdMap={onGoIdMap} />
         ) : (
         <div className="table-scroll">
           <table className="trace-table">
@@ -267,6 +272,49 @@ function SystemTab({ trace, onImport, onGoIdMap }: { trace: SystemTrace; onImpor
         )}
       </section>
 
+      {trace.causes.some((c) => c.problems.length > 0) && (
+        <section className="panel" aria-label="FMEA 고장원인 문제 (역방향 확인)">
+          <div className="panel-head">
+            <div>
+              <h2>FMEA 고장원인 문제 (역방향 확인)</h2>
+              <p className="muted small">ASIL이 있는데 TSR 연결이 없는 고장원인, 없는 TSR 참조, 애매한 참조</p>
+            </div>
+          </div>
+          <div className="table-scroll">
+            <table className="trace-table">
+              <thead>
+                <tr>
+                  <th scope="col">위치</th>
+                  <th scope="col">고장원인</th>
+                  <th scope="col">ASIL</th>
+                  <th scope="col">문제</th>
+                  <th scope="col">적힌 TSR ID (원문)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trace.causes
+                  .filter((c) => c.problems.length > 0)
+                  .map((c, i) => (
+                    <tr key={i}>
+                      <td className="small mono">{c.item.location}</td>
+                      <td title={c.item.title}>{shortText(c.item.title, 50)}</td>
+                      <td>{c.item.asil || '-'}</td>
+                      <td>
+                        {c.problems.map((p) => (
+                          <div key={p} className={p.startsWith('확인 필요') ? 'check-text' : 'warn-text'}>
+                            {p}
+                          </div>
+                        ))}
+                      </td>
+                      <td className="mono small pre">{c.item.refRaw || '-'}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       {view === 'list' && trace.tsrs.length > 0 && (
         <section className="panel pad-panel" aria-label="TSR 목록">
           <Disclosure summary={<span>TSR 목록 {trace.tsrs.length}개 (다음 단계: FMEA 근거)</span>}>
@@ -321,20 +369,179 @@ function SystemTab({ trace, onImport, onGoIdMap }: { trace: SystemTrace; onImpor
   )
 }
 
-function SoftwareTab({ trace }: { trace: SystemTrace }): ReactElement {
-  const sw = trace.tsrs.filter((t) => t.item.allocation === 'SW' || t.item.allocation === 'BOTH')
+function swBlockOf(item: TraceItem): string {
+  const n = sgNumber(item.normId)
+  return n !== undefined ? `SG${String(n).padStart(3, '0')}` : GENERAL_BLOCK
+}
+
+function SoftwareTab({ sys, sw, onImport, onGoIdMap }: { sys: SystemTrace; sw: SoftwareTrace; onImport: () => void; onGoIdMap: () => void }): ReactElement {
+  const [block, setBlock] = useState('전체')
+  const [view, setView] = useState<'map' | 'list'>('map')
+  const [status, setStatus] = useState<TraceStatus | '전체'>('전체')
+  const build = useCallback((o: MapOptions) => buildSoftwareMap(sw, o), [sw])
+
+  if (!sw.hasTsc && !sw.hasSrs) {
+    return (
+      <div className="page-stack">
+        <StageCards cards={sw.cards} />
+        <EmptyState
+          title="TSC·SRS를 넣으면 소프트웨어 추적성이 나옵니다"
+          action={
+            <button type="button" className="btn btn-primary" onClick={onImport}>
+              문서 넣기
+            </button>
+          }
+        >
+          SRS의 Functional Safety Related에 적힌 TSR과 S/W 할당 TSR을 연결합니다.
+        </EmptyState>
+      </div>
+    )
+  }
+
+  const blocks = [...new Set([...sw.tsrs.map((t) => swBlockOf(t.item)), ...(sw.ssrs.some((s) => s.refs.length === 0 && s.problems.length > 0) ? [NO_TSR_BLOCK] : [])])].sort()
+  const inBlock = (t: SwTsrRow): boolean => block === '전체' || swBlockOf(t.item) === block
+  const rows = sw.tsrs.filter(inBlock)
+  const counts = new Map<TraceStatus, number>(TRACE_STATUSES.map((s) => [s, rows.filter((r) => r.status === s).length]))
+  const shownRows = rows.filter((r) => status === '전체' || r.status === status).sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status])
+  const ssrProblems: SsrRow[] = sw.ssrs.filter((s) => s.problems.length > 0)
+
   return (
     <div className="page-stack">
-      <StageCards
-        cards={[
-          trace.hasTsc ? { label: 'S/W 할당 TSR', count: sw.length } : { label: 'S/W 할당 TSR', pending: 'TSC 미등록' },
-          { label: 'SSR 연결', pending: 'SRS 내용은 M4부터 읽음' },
-          { label: 'SW 요구사항 시험', pending: '문서 미등록 (자리)' }
-        ]}
-      />
-      <EmptyState title="소프트웨어 탭은 M4에서 만들어집니다">
-        SRS를 읽어 TSR(S/W) → SSR 연결과, TSR 연결이 없는 안전 관련 SSR(역방향 확인)을 보여 줍니다.
-      </EmptyState>
+      <StageCards cards={sw.cards} />
+      <section className="panel" aria-label={view === 'map' ? '소프트웨어 연결 지도' : 'TSR(S/W) → SSR 연결'}>
+        <div className="panel-head">
+          <div>
+            <h2>{view === 'map' ? '연결 지도' : 'TSR(S/W) → SSR 연결'}</h2>
+            <p className="muted small">S/W·S/W+H/W 할당 TSR만 SSR이 필요합니다. 미적용 TSR은 연결률 계산에서 뺍니다.</p>
+          </div>
+          <div className="filters">
+            <label className="select-label">
+              묶음
+              <select value={block} onChange={(e) => setBlock(e.target.value)}>
+                <option value="전체">전체</option>
+                {blocks.map((b) => (
+                  <option key={b}>{b}</option>
+                ))}
+              </select>
+            </label>
+            {view === 'list' && (
+              <div className="chips" role="group" aria-label="상태 거르기">
+                <button type="button" className="chip" aria-pressed={status === '전체'} onClick={() => setStatus('전체')}>
+                  전체 {rows.length}
+                </button>
+                {TRACE_STATUSES.filter((s) => (counts.get(s) ?? 0) > 0).map((s) => (
+                  <button key={s} type="button" className="chip" aria-pressed={status === s} onClick={() => setStatus(s)}>
+                    {s} {counts.get(s)}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="view-toggle" role="group" aria-label="보기">
+              <button type="button" className="chip" aria-pressed={view === 'map'} onClick={() => setView('map')}>
+                연결 지도
+              </button>
+              <button type="button" className="chip" aria-pressed={view === 'list'} onClick={() => setView('list')}>
+                목록
+              </button>
+            </div>
+          </div>
+        </div>
+        {view === 'map' ? (
+          <TraceMap build={build} sys={sys} sw={sw} sg={block === '전체' ? 'all' : block} onGoIdMap={onGoIdMap} />
+        ) : (
+          <div className="table-scroll">
+            <table className="trace-table">
+              <thead>
+                <tr>
+                  <th scope="col">상태</th>
+                  <th scope="col">TSR ID</th>
+                  <th scope="col">내용</th>
+                  <th scope="col">할당</th>
+                  <th scope="col">ASIL</th>
+                  <th scope="col">연결된 SSR</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shownRows.map((r, i) => (
+                  <tr key={i} className={`row-${r.status === '누락' ? 'missing' : r.status === '확인 필요' ? 'check' : 'ok'}`}>
+                    <td>
+                      <TraceBadge status={r.status} text={r.status === '누락' ? r.reason : undefined} />
+                      {r.status !== '누락' && r.reason && <div className="muted small">{r.reason}</div>}
+                    </td>
+                    <td className="mono">{idText(r.item)}</td>
+                    <td title={r.item.title}>{shortText(r.item.title, 60)}</td>
+                    <td title={r.item.allocationRaw}>{ALLOC_LABEL[r.item.allocation]}</td>
+                    <td>{r.item.asil || '-'}</td>
+                    <td className="mono small">
+                      {r.ssrs.length === 0 && r.ambiguous.length === 0 && '-'}
+                      {r.ssrs.map((x, k) => (
+                        <div key={k}>
+                          {x.ssr.rawId}
+                          {x.method === 'tail' && <span className="tag">약식 표기</span>}
+                          {x.method === 'alias' && <span className="tag">별칭</span>}
+                        </div>
+                      ))}
+                      {r.ambiguous.map((l, k) => (
+                        <div key={`a${k}`}>
+                          <span className="tag tag-check">후보</span> {l.from.rawId} — {l.resolution.ref}
+                        </div>
+                      ))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="panel" aria-label="SSR 쪽 문제 (역방향 확인)">
+        <div className="panel-head">
+          <div>
+            <h2>SSR 쪽 문제 (역방향 확인)</h2>
+            <p className="muted small">TSR 연결이 없는 안전 관련 SSR(ASIL A~D, Yes인데 TSR 없음), 없는 TSR 참조, 애매한 참조</p>
+          </div>
+          {ssrProblems.some((s) => s.problems.some((x) => x.startsWith('없는') || x.startsWith('확인 필요'))) && (
+            <button type="button" className="btn btn-small" onClick={onGoIdMap}>
+              ID 대응표에서 고르기
+            </button>
+          )}
+        </div>
+        {ssrProblems.length === 0 ? (
+          <p className="muted pad">{sw.hasSrs ? '문제 없음' : 'SRS 미등록'}</p>
+        ) : (
+          <div className="table-scroll">
+            <table className="trace-table">
+              <thead>
+                <tr>
+                  <th scope="col">SSR ID</th>
+                  <th scope="col">제목</th>
+                  <th scope="col">ASIL</th>
+                  <th scope="col">문제</th>
+                  <th scope="col">Functional Safety Related (원문)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ssrProblems.map((s, i) => (
+                  <tr key={i}>
+                    <td className="mono">{idText(s.item)}</td>
+                    <td title={s.item.title}>{shortText(s.item.title, 40)}</td>
+                    <td>{s.item.asil || '-'}</td>
+                    <td>
+                      {s.problems.map((p) => (
+                        <div key={p} className={p.startsWith('확인 필요') || p.startsWith('ID 중복') ? 'check-text' : 'warn-text'}>
+                          {p}
+                        </div>
+                      ))}
+                    </td>
+                    <td className="mono small">{s.item.refRaw || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   )
 }

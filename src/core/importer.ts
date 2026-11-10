@@ -13,12 +13,12 @@ import { normHeader } from './text'
 import { versionFromFileName } from './filename'
 import { parseFsr } from './fsr'
 import { parseTsc } from './tsc'
+import { isFmeaSheet, parseFmea } from './fmea'
+import { parseSrs } from './srs'
 
 export type ReadResult = Omit<ParsedDocument, 'path' | 'hash' | 'size' | 'elapsedMs'>
 
 const LATER_NOTE: Partial<Record<DocKind, string>> = {
-  FMEA: 'FMEA 내용(고장원인·TSR 연결)은 M4부터 읽습니다. 지금은 파일 등록(산출물 일정의 "등록 문서")만 합니다.',
-  SRS: 'SRS 내용(SSR·TSR 연결)은 M4부터 읽습니다. 지금은 파일 등록만 합니다.',
   VR: 'Verification Report는 내용을 열지 않고 파일명으로만 작성 여부를 판단합니다.',
   OTHER: '처음 보는 양식입니다. 칸 지정 기능은 M5부터 제공합니다. 지금은 파일 등록만 합니다.'
 }
@@ -31,7 +31,7 @@ export function detectWorkbookKinds(wb: Workbook): DocKind[] {
   const kinds: DocKind[] = []
   if (wb.sheets.some((s) => isDiaSheet(s))) kinds.push('DIA')
   if (wb.sheets.some((s) => sheetHasHeader(s, (n) => (SYNONYMS.fsrId as readonly string[]).includes(n), 80))) kinds.push('FSR')
-  if (wb.sheets.some((s) => sheetHasHeader(s, (n) => n.includes('failure cause') || n.includes('고장 원인'), 30))) kinds.push('FMEA')
+  if (wb.sheets.some((s) => isFmeaSheet(s))) kinds.push('FMEA')
   return kinds
 }
 
@@ -114,6 +114,16 @@ export function readDocument(fileName: string, bytes: Uint8Array, forcedKind?: D
       if (!doc) return fail(fileName, 'FAILED', 'TSC는 워드(.docx) 파일이어야 합니다.')
       const r = parseTsc(doc)
       return { fileName, ok: true, kind, detectedKinds, version: r.version || version, report: r.report, items: r.items }
+    }
+    case 'FMEA': {
+      if (!wb) return fail(fileName, 'FAILED', 'FMEA는 엑셀 파일이어야 합니다.')
+      const r = parseFmea(wb)
+      return { fileName, ok: true, kind, detectedKinds, version, report: r.report, items: r.items, meta: { tsrColumn: r.hasTsrColumn ? 'yes' : 'no' } }
+    }
+    case 'SRS': {
+      if (!doc) return fail(fileName, 'FAILED', 'SRS는 워드(.docx) 파일이어야 합니다.')
+      const r = parseSrs(doc)
+      return { fileName, ok: true, kind, detectedKinds, version, report: r.report, items: r.items }
     }
     default:
       return registerOnly(fileName, kind, detectedKinds)

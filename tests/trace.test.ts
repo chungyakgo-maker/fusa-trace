@@ -47,15 +47,15 @@ describe('시스템 추적성 (SPEC §8)', () => {
   })
 
   it('ID 대응표: 없는 ID 1건', () => {
-    expect(pendingCount(t)).toBe(1)
-    expect(reviewLinks(t).map((l) => `${l.from.rawId}→${l.resolution.ref}:${l.resolution.method}`)).toEqual(['TSR-CTL-SG001-029→FSR.001.099:missing'])
+    expect(pendingCount(t.links)).toBe(1)
+    expect(reviewLinks(t.links).map((l) => `${l.from.rawId}→${l.resolution.ref}:${l.resolution.method}`)).toEqual(['TSR-CTL-SG001-029→FSR.001.099:missing'])
   })
 
   it('사람이 고르면(별칭) 연결되고, TSC 새 버전에서도 유지', () => {
     const withAlias = { ...base, aliases: [{ sourceKind: 'TSC' as const, ref: 'FSR.001.099', target: 'FSR.001.011', createdAt: '' }] }
     const t2 = computeSystemTrace(withAlias)
     expect(t2.fsrs.find((f) => f.item.rawId === 'FSR.001.011')).toMatchObject({ status: '연결됨' })
-    expect(pendingCount(t2)).toBe(0)
+    expect(pendingCount(t2.links)).toBe(0)
     const next = importInto(withAlias, `${P}_기술안전개념서(TSC)_R2.docx`, undefined, '2026-05-20T00:00:00.000Z')
     expect(computeSystemTrace(next).fsrs.find((f) => f.item.rawId === 'FSR.001.011')?.status).toBe('연결됨')
   })

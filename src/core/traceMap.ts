@@ -1,6 +1,6 @@
 /**
  * 연결 지도 배치 계산 (SPEC §9.1) — 화면과 분리한 순수 함수
- * - 열: SG → FSR → TSR → FMEA 근거 (M4 전까지 자리)
+ * - 열: SG → FSR → TSR → FMEA 근거 (요소별 "고장원인 n건" 카드)
  * - SG마다 묶음(블록)으로 위에서 아래로 쌓음. 문제 있는 항목을 먼저
  * - 정상 연결은 SG마다 "정상 FSR n개" / "TSR m개" 묶음 카드로 접음 (펼치기 가능)
  * - 누락: FSR → "TSR 없음" 빈 카드로 주황 점선. 없는 FSR 참조: "○○ 없음" 빈 카드 → TSR로 주황 점선
@@ -11,13 +11,22 @@ import { isResolved } from './resolve'
 import { normalizeId, sgNumber } from './ids'
 import type { FsrRow, SystemTrace, TraceStatus, TsrRow } from './trace'
 
-export const MAP_COLUMNS = ['안전 목표 (SG)', 'FSR', 'TSR', 'FMEA 근거'] as const
-export const COL_X = [0, 186, 452, 728]
-export const COL_W = [150, 230, 240, 160]
+export interface MapColumn {
+  label: string
+  x: number
+  w: number
+}
+
+export const SYSTEM_COLUMNS: MapColumn[] = [
+  { label: '안전 목표 (SG)', x: 0, w: 150 },
+  { label: 'FSR', x: 186, w: 230 },
+  { label: 'TSR', x: 452, w: 240 },
+  { label: 'FMEA 근거', x: 728, w: 190 }
+]
 export const CARD_H = 56
 export const GHOST_H = 40
-const GAP = 10
-const BLOCK_GAP = 28
+export const GAP = 10
+export const BLOCK_GAP = 28
 
 export type NodeTone = 'ok' | 'check' | 'missing' | 'na' | 'pending' | 'ghost' | 'group' | 'sg'
 export type EdgeStyle = 'ok' | 'check' | 'missing'
@@ -27,14 +36,16 @@ export interface MapNode {
   col: number
   y: number
   h: number
-  kind: 'sg' | 'item' | 'group' | 'ghost' | 'placeholder'
+  kind: 'sg' | 'item' | 'group' | 'ghost' | 'placeholder' | 'cluster'
   tone: NodeTone
   title: string
   sub: string
   status?: TraceStatus
   item?: TraceItem
-  /** 묶음 카드: 펼칠 SG 블록 */
+  /** 묶음 카드: 펼칠 블록 */
   block?: string
+  /** 모음 카드 (FMEA 요소별 고장원인): 들어 있는 항목 */
+  items?: TraceItem[]
 }
 
 export interface MapEdge {
@@ -45,6 +56,7 @@ export interface MapEdge {
 }
 
 export interface MapLayout {
+  columns: MapColumn[]
   nodes: MapNode[]
   edges: MapEdge[]
   width: number
@@ -62,19 +74,19 @@ export interface MapOptions {
 }
 
 export const UNKNOWN_BLOCK = '(SG 미상)'
-const STATUS_ORDER: Record<TraceStatus, number> = { 누락: 0, '확인 필요': 1, 연결됨: 2, '문서 대기': 3, '대상 아님': 4 }
-const TONE: Record<TraceStatus, NodeTone> = { 연결됨: 'ok', '확인 필요': 'check', 누락: 'missing', '대상 아님': 'na', '문서 대기': 'pending' }
+export const STATUS_ORDER: Record<TraceStatus, number> = { 누락: 0, '확인 필요': 1, 연결됨: 2, '문서 대기': 3, '대상 아님': 4 }
+export const TONE: Record<TraceStatus, NodeTone> = { 연결됨: 'ok', '확인 필요': 'check', 누락: 'missing', '대상 아님': 'na', '문서 대기': 'pending' }
 
 export function nodeIdOf(item: TraceItem): string {
   return `${item.kind}:${item.normId}#${item.dupIndex}`
 }
 
-function oneLine(s: string, max = 40): string {
+export function oneLine(s: string, max = 40): string {
   const t = s.replace(/\s+/g, ' ').trim()
   return t.length > max ? `${t.slice(0, max - 1)}…` : t
 }
 
-function idLabel(item: TraceItem): string {
+export function idLabel(item: TraceItem): string {
   return item.dupCount > 1 ? `${item.rawId} (중복 #${item.dupIndex})` : item.rawId
 }
 
@@ -106,7 +118,9 @@ export function buildTraceMap(t: SystemTrace, opts: MapOptions): MapLayout {
     tsrBlock.set(tr, key)
   }
 
-  const clean = (tr: TsrRow): boolean => tr.problems.length === 0
+  /** 문제 없는 TSR: 위로의 문제도 없고, FMEA 근거도 누락·확인 필요가 아님 */
+  const clean = (tr: TsrRow): boolean => tr.problems.length === 0 && tr.status !== '누락' && tr.status !== '확인 필요'
+  const fmeaActive = t.causes.length > 0
   const tsrRowOf = new Map(t.tsrs.map((tr) => [tr.item, tr]))
   const isNormalFsr = (f: FsrRow): boolean =>
     f.status === '연결됨' && f.ambiguous.length === 0 && f.item.dupCount === 1 && f.tsrs.every((x) => clean(tsrRowOf.get(x.tsr)!))
@@ -246,6 +260,48 @@ export function buildTraceMap(t: SystemTrace, opts: MapOptions): MapLayout {
       }
     }
 
+    // FMEA 근거 열: 요소별 고장원인 모음 카드 + "FMEA 근거 없음"
+    let fy = top
+    if (fmeaActive) {
+      const clusters = new Map<string, { causes: Set<TraceItem>; from: Map<string, EdgeStyle>; ys: number[] }>()
+      const addCause = (cause: TraceItem, tid: string, style: EdgeStyle): void => {
+        const element = cause.element || '(요소 없음)'
+        const c = clusters.get(element) ?? { causes: new Set<TraceItem>(), from: new Map<string, EdgeStyle>(), ys: [] as number[] }
+        c.causes.add(cause)
+        if (c.from.get(tid) !== 'ok') c.from.set(tid, style)
+        c.ys.push(byId.get(tid)!.y)
+        clusters.set(element, c)
+      }
+      for (const tr of tsrs) {
+        const tid = nodeOfItem.get(tr.item) ?? groupOfTsr.get(tr.item)
+        if (!tid) continue
+        for (const c of tr.causes) addCause(c.cause, tid, tr.item.dupCount > 1 ? 'check' : 'ok')
+        for (const l of tr.causeAmbiguous) addCause(l.from, tid, 'check')
+      }
+      type FSlot = { anchor: number; kind: 'cluster'; element: string } | { anchor: number; kind: 'none'; tid: string; tr: TsrRow }
+      const fslots: FSlot[] = [...clusters.entries()].map(([element, c]) => ({ anchor: c.ys.reduce((a, b) => a + b, 0) / c.ys.length, kind: 'cluster' as const, element }))
+      for (const tr of shownTsrs) {
+        if (tr.status !== '누락') continue
+        const tid = nodeIdOf(tr.item)
+        fslots.push({ anchor: byId.get(tid)!.y, kind: 'none', tid, tr })
+      }
+      fslots.sort((a, b) => a.anchor - b.anchor)
+      for (const f of fslots) {
+        if (f.kind === 'cluster') {
+          const c = clusters.get(f.element)!
+          const id = `fmea:${key}:${f.element}`
+          place({ id, col: 3, h: CARD_H, kind: 'cluster', tone: 'ok', title: f.element, sub: `고장원인 ${c.causes.size}건`, items: [...c.causes] }, fy)
+          for (const [tid, style] of c.from) addEdge(tid, id, style)
+          fy += CARD_H + GAP
+        } else {
+          const gid = `ghost-fmea:${f.tid}`
+          place({ id: gid, col: 3, h: GHOST_H, kind: 'ghost', tone: 'ghost', title: 'FMEA 근거 없음', sub: `${f.tr.item.rawId}을(를) 가리키는 고장원인이 없음` }, fy)
+          addEdge(f.tid, gid, 'missing')
+          fy += GHOST_H + GAP
+        }
+      }
+    }
+
     // 없는 FSR 참조: FSR 열에 빈 카드
     let gy = fsrBottom
     for (const tr of shownTsrs) {
@@ -260,7 +316,7 @@ export function buildTraceMap(t: SystemTrace, opts: MapOptions): MapLayout {
         gy = at + GHOST_H + GAP
       }
     }
-    top = Math.max(top + CARD_H + GAP, gy, ty) + BLOCK_GAP
+    top = Math.max(top + CARD_H + GAP, gy, ty, fy) + BLOCK_GAP
   }
 
   // TSR → FSR 선 (블록을 넘나드는 선 포함). 화면에 없는 블록의 항목은 생략
@@ -279,12 +335,14 @@ export function buildTraceMap(t: SystemTrace, opts: MapOptions): MapLayout {
     }
   }
 
-  // FMEA 근거 열 (M4 전까지 자리)
-  const fmea = t.cards[2]
-  nodes.push({ id: 'fmea', col: 3, y: 0, h: CARD_H + 20, kind: 'placeholder', tone: 'pending', title: 'FMEA 근거', sub: fmea?.pending ?? '' })
+  // FMEA가 없거나 TSR 연결 칸이 없으면 자리 카드
+  if (!fmeaActive) {
+    nodes.push({ id: 'fmea', col: 3, y: 0, h: CARD_H + 20, kind: 'placeholder', tone: 'pending', title: 'FMEA 근거', sub: t.cards[2]?.pending ?? '' })
+  }
 
   const height = Math.max(CARD_H + 20, ...nodes.map((n) => n.y + n.h)) + 8
-  return { nodes, edges, width: COL_X[3] + COL_W[3], height, blocks }
+  const last = SYSTEM_COLUMNS[SYSTEM_COLUMNS.length - 1]
+  return { columns: SYSTEM_COLUMNS, nodes, edges, width: last.x + last.w, height, blocks }
 }
 
 /** 고른 카드의 위쪽(선 거꾸로)과 아래쪽(선 따라) 연결. 형제 카드로는 번지지 않음 */

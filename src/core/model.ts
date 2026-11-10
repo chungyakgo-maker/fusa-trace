@@ -18,7 +18,7 @@ export const DOC_KIND_LABEL: Record<DocKind, string> = {
 }
 
 /** 이 버전에서 내용까지 읽는 종류. 나머지는 파일 등록만 (일정 화면의 "등록 문서" 표시용) */
-export const CONTENT_READ_KINDS: readonly DocKind[] = ['DIA', 'FSR', 'TSC']
+export const CONTENT_READ_KINDS: readonly DocKind[] = ['DIA', 'FSR', 'TSC', 'FMEA', 'SRS']
 
 /** 날짜 'YYYY-MM-DD' */
 export type IsoDate = string
@@ -141,6 +141,8 @@ export interface SourceDoc {
   report: ImportReport
   dia?: DiaContent
   items?: TraceItem[]
+  /** 문서별 부가 정보 (예: FMEA의 TSR 연결 칸 유무 tsrColumn: 'yes' | 'no') */
+  meta?: Record<string, string>
 }
 
 /** 사람이 고른 연결 기억 (SPEC §5 Alias) */
@@ -211,6 +213,7 @@ export interface ParsedDocument {
   report: ImportReport
   dia?: DiaContent
   items?: TraceItem[]
+  meta?: Record<string, string>
   /** 읽는 데 걸린 시간 (ms) */
   elapsedMs: number
 }
