@@ -1,6 +1,7 @@
 /** 프로젝트 데이터 다루기: 만들기, 문서 반영(버전 관리), 삭제, 버전 비교 — 순수 함수 */
 import type { Deliverable, DocKind, ParsedDocument, Project, SourceDoc, TraceItem } from './model'
 import { normalizeFileName } from './filename'
+import { pruneEdits } from './edits'
 
 export function newProject(id: string, name: string, now: string): Project {
   return {
@@ -58,6 +59,8 @@ export function addDocument(p: Project, doc: SourceDoc, now: string): Project {
   const docs = p.docs.map((d) =>
     d.active && d.kind === doc.kind && (doc.kind === 'DIA' || d.normName === doc.normName) ? { ...d, active: false } : d
   )
+  // 새 DIA: 고친 값과 같아진 칸은 지움 (반영 끝)
+  if (doc.kind === 'DIA' && doc.dia && p.scheduleEdits) return { ...p, docs: [...docs, doc], scheduleEdits: pruneEdits(p.scheduleEdits, doc.dia.deliverables), updatedAt: now }
   return { ...p, docs: [...docs, doc], updatedAt: now }
 }
 

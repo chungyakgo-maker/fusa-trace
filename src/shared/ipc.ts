@@ -72,7 +72,7 @@ export interface FusaApi {
     /** 칸 지정 화면용 미리보기 (작업 스레드) */
     preview(path: string): Promise<PreviewData | { error: string }>
   }
-  exportSchedule(project: Project, today: IsoDate, options: { includeTrace: boolean }): Promise<ExportResult>
+  exportSchedule(project: Project, today: IsoDate, options: { includeTrace: boolean; includePaste?: boolean }): Promise<ExportResult>
   showInFolder(path: string): Promise<void>
   appInfo(): Promise<AppInfo>
   /** 업데이트 (GitHub Release). 접속은 앱 본체의 업데이트 전용 연결만 함 */

@@ -7,6 +7,7 @@
 //     → 엑셀 출력 → 다시 열어도 저장돼 있는지 (먼저 npm run fixtures)
 //   - FSR + TSC → 추적성(누락·없는 ID·ID 중복) → 연결 지도·상세 패널 → ID 대응표에서 골라 연결
 //   - FMEA + SRS → FMEA 근거, 소프트웨어 탭(지도·역방향 확인), ID 대응표(SRS 참조), 엑셀 시트 3
+//   - 산출물 일정 직접 고치기 → 상태 다시 계산 → 엑셀 출력의 DIA 붙여넣기 시트(원본과 같은 칸 주소)
 //   - 처음 보는 양식: HSR 칸 지정 → 하드웨어 탭 연결, 같은 모양 자동, SW 시험 명세 칸 지정, 동의어 추가
 //   - 대량(TSR 320개): 읽기 시간, 지도 모두 펼치기·카드 누르기·탭 전환 시간
 //   - 업데이트: 가짜 GitHub(내 PC)로 자동 확인·버전 확인·받기·확인값 불일치·업데이트 연결 차단 범위
@@ -171,11 +172,50 @@ try {
   check(wb.worksheets.map((w) => w.name).join(',') === '작성 리스트,담당자별 요약,추적성 누락', '엑셀 출력: 시트 3개 (추적성 누락 포함)', wb.worksheets.map((w) => w.name).join(', '))
   check(wb.getWorksheet('작성 리스트').rowCount === 6 + 22, '엑셀 출력: 22줄', String(wb.getWorksheet('작성 리스트').rowCount - 6))
 
+  // ── 산출물 일정 직접 고치기 → 상태 다시 계산 → 엑셀 출력의 DIA 붙여넣기 시트 (원본과 같은 칸 주소)
+  const noPlanCard = win.locator('.summary-card', { hasText: '일정 미기재' }).locator('.summary-value')
+  const noPlanBefore = Number(await noPlanCard.innerText())
+  await win.getByRole('button', { name: /^No\.1 .*일정·담당 고치기$/ }).click()
+  await win.getByLabel('계획 종료', { exact: true }).fill('2026-04-15')
+  await win.getByLabel('담당 팀', { exact: true }).fill('품질팀')
+  await win.screenshot({ path: screenshotPath.replace(/\.png$/, '-edit.png') })
+  await win.getByRole('button', { name: '저장', exact: true }).click()
+  await win.waitForSelector('dialog.modal', { state: 'detached' })
+  await win.getByRole('button', { name: /^No\.12 .*일정·담당 고치기$/ }).click()
+  await win.getByLabel('계획 시작', { exact: true }).fill('')
+  await win.getByRole('button', { name: '저장', exact: true }).click()
+  await win.waitForSelector('dialog.modal', { state: 'detached' })
+  const editText = await win.locator('main').innerText()
+  check(editText.includes('직접 고친 칸 3개') && editText.includes('수정'), '일정 고치기: 고친 칸에 "수정" 표시, 고친 칸 3개', editText.match(/직접 고친 칸 \d+개/)?.[0])
+  const noPlanAfter = Number(await noPlanCard.innerText())
+  check(noPlanAfter === noPlanBefore + 1, '일정 고치기: 계획 시작을 비우면 "일정 미기재"로 다시 계산', `${noPlanBefore} → ${noPlanAfter}`)
+  await win.screenshot({ path: screenshotPath.replace(/\.png$/, '-edited.png') })
+
+  const outPaste = join(mkdtempSync(join(tmpdir(), 'fusa-export-')), 'paste.xlsx')
+  await app.evaluate(({ dialog }, path) => {
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath: path })
+  }, outPaste)
+  await win.getByRole('button', { name: '엑셀 출력' }).click()
+  check(await win.getByLabel(/DIA 붙여넣기" 시트 포함/).isChecked(), '엑셀 출력: 고친 칸이 있으면 "DIA 붙여넣기" 시트 포함 (기본 켬)')
+  await win.getByRole('button', { name: '저장할 곳 고르기' }).click()
+  await win.waitForSelector('text=엑셀로 저장했습니다', { timeout: 30_000 })
+  const wbp = new ExcelJS.Workbook()
+  await wbp.xlsx.readFile(outPaste)
+  const names = wbp.worksheets.map((w) => w.name)
+  check(names.includes('DIA 붙여넣기 안내') && names.includes('DIA 붙여넣기'), '엑셀 출력: DIA 붙여넣기 안내 + 붙여넣기 시트', names.join(', '))
+  const ps = wbp.getWorksheet('DIA 붙여넣기')
+  const l8 = ps.getCell('L8').value
+  check(l8 instanceof Date && l8.toISOString().startsWith('2026-04-15') && ps.getCell('O8').value === '품질팀\n홍길동 책임', '붙여넣기 시트: 원본 DIA와 같은 칸(L8 계획 종료, O8 담당)에 고친 값', `${l8 instanceof Date ? l8.toISOString().slice(0, 10) : l8} / ${JSON.stringify(ps.getCell('O8').value)}`)
+  const guide = []
+  wbp.getWorksheet('DIA 붙여넣기 안내').eachRow((row) => row.eachCell((c) => guide.push(String(c.value))))
+  check(guide.join(' ').includes('K8:O') && guide.join(' ').includes('3개'), '붙여넣기 안내: 범위(K8:O…)와 바뀐 칸 3개', guide.find((g) => g.includes('K8:')))
+
   // ── 저장 확인: 화면을 새로 고쳐도 프로젝트가 남아 있음
   await win.reload()
   await win.waitForSelector('.summary-card', { timeout: 30_000 })
   const totalAfter = (await win.locator('.summary-card').first().locator('.summary-value').innerText()).trim()
   check(totalAfter === '22', '다시 열어도 저장된 내용이 그대로', totalAfter)
+  check((await win.locator('main').innerText()).includes('직접 고친 칸 3개'), '다시 열어도 고친 칸이 그대로')
 
   await win.locator('.menu-item', { hasText: '문서 관리' }).click()
   const docsText = await win.locator('main').innerText()

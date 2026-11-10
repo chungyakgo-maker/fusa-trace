@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import type { Project } from '../../core/model'
-import { addDocument, toSourceDoc } from '../../core/project'
+import { activeDeliverables, activeDocs, addDocument, toSourceDoc } from '../../core/project'
+import { countEdits } from '../../core/edits'
 import { effectiveToday } from '../../core/schedule'
 import { MENU, type PageId } from './menu'
 import { DownloadIcon, LinkIcon, OfflineIcon, PageIcon, UploadIcon } from './icons'
@@ -35,6 +36,7 @@ function Shell(): ReactElement {
   const [exporting, setExporting] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
   const [includeTrace, setIncludeTrace] = useState(true)
+  const [includePaste, setIncludePaste] = useState(true)
 
   useEffect(() => {
     void window.fusa.projects.last().then((p) => {
@@ -55,6 +57,9 @@ function Shell(): ReactElement {
   )
 
   const today = project ? effectiveToday(project) : ''
+  /** 직접 고친 일정·담당 칸 수, 원본 DIA 칸 위치를 기억하는지 (엑셀 출력의 붙여넣기 시트) */
+  const editCount = project ? countEdits(project, activeDeliverables(project)) : 0
+  const hasLayout = Boolean(project && activeDocs(project, 'DIA')[0]?.dia?.layout)
   const reviewCount = useMemo(() => (project ? pendingReviewCount(project) : 0), [project])
 
   const pickFiles = async (): Promise<void> => {
@@ -79,7 +84,7 @@ function Shell(): ReactElement {
     if (!project) return
     setExportOpen(false)
     setExporting(true)
-    const r = await window.fusa.exportSchedule(project, today, { includeTrace })
+    const r = await window.fusa.exportSchedule(project, today, { includeTrace, includePaste: includePaste && editCount > 0 })
     setExporting(false)
     if (r.ok && r.path) {
       const path = r.path
@@ -259,6 +264,14 @@ function Shell(): ReactElement {
                 <input type="checkbox" checked={includeTrace} onChange={(e) => setIncludeTrace(e.target.checked)} /> 시트 3 "추적성 누락" 포함 — 누락·확인 필요 항목 (단계, ID, 문제, 출처 문서)
               </label>
             </li>
+            {editCount > 0 && (
+              <li>
+                <label>
+                  <input type="checkbox" checked={includePaste} onChange={(e) => setIncludePaste(e.target.checked)} /> "DIA 붙여넣기" 시트 포함 — 직접 고친 칸 {editCount}개를 원본 DIA와 같은 칸 위치에 (붙이는 방법·범위는 "DIA 붙여넣기 안내" 시트)
+                </label>
+                {!hasLayout && <p className="warn-line small">이 DIA는 칸 위치를 기억하기 전에 넣은 것이라 붙여넣기 시트를 만들 수 없습니다. DIA를 한 번 다시 넣어 주세요.</p>}
+              </li>
+            )}
           </ul>
         </Modal>
       )}

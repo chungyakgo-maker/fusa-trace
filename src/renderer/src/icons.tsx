@@ -143,6 +143,13 @@ export const TrashIcon = ({ size = 16 }: { size?: number }): ReactElement => (
   </Icon>
 )
 
+export const PencilIcon = ({ size = 14 }: { size?: number }): ReactElement => (
+  <Icon size={size}>
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+  </Icon>
+)
+
 export const PlusIcon = ({ size = 16 }: { size?: number }): ReactElement => (
   <Icon size={size}>
     <line x1="12" y1="5" x2="12" y2="19" />

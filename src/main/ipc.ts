@@ -85,7 +85,7 @@ export function registerIpc(store: ProjectStore, logFile: string, updater: Updat
   ipcMain.handle(IPC.docsRead, (_e, requests: ReadRequest[], options?: ReadOptions) => readDocuments(requests, options ?? {}))
   ipcMain.handle(IPC.docsPreview, (_e, path: string) => previewFile(path))
 
-  ipcMain.handle(IPC.exportSchedule, async (e, p: Project, today: string, exportOptions?: { includeTrace?: boolean }): Promise<ExportResult> => {
+  ipcMain.handle(IPC.exportSchedule, async (e, p: Project, today: string, exportOptions?: { includeTrace?: boolean; includePaste?: boolean }): Promise<ExportResult> => {
     try {
       const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
       const exportDate = localToday()
@@ -96,7 +96,7 @@ export function registerIpc(store: ProjectStore, logFile: string, updater: Updat
       }
       const r = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
       if (r.canceled || !r.filePath) return { ok: false, canceled: true }
-      const bytes = await buildScheduleXlsx(p, today, exportDate, { includeTrace: Boolean(exportOptions?.includeTrace) })
+      const bytes = await buildScheduleXlsx(p, today, exportDate, { includeTrace: Boolean(exportOptions?.includeTrace), includePaste: Boolean(exportOptions?.includePaste) })
       await writeFile(r.filePath, bytes)
       log('info', 'export ok')
       return { ok: true, path: r.filePath }

@@ -79,10 +79,52 @@ export interface Deliverable {
   isVR: boolean
   /** 날짜 경고 (형식 오류, 종료 < 시작, 짝 못 찾음) */
   dateWarnings: string[]
+  /** 날짜 칸마다 이 줄의 값이 원본 칸의 어디에서 왔는지 (붙여넣기용 시트에서 원래 모양대로 다시 만들 때 씀) */
+  dateSrc?: Partial<Record<DiaDateField, DateSource>>
+}
+
+export type DiaDateField = 'planStart' | 'planEnd' | 'realStart' | 'realEnd'
+export const DIA_DATE_FIELDS: readonly DiaDateField[] = ['planStart', 'planEnd', 'realStart', 'realEnd']
+
+/**
+ * 날짜 칸 안에서 이 줄의 값 위치
+ * - empty: 칸에 이 줄의 값이 없음 / whole: 칸 값 하나를 행 전체에 씀
+ * - entry: 여러 줄 글 중 한 줄(`라벨: 날짜`) — line = 칸 글의 줄 번호(0부터), prefix = 날짜 앞 글자("FMEA: "), sep = 날짜 구분 글자
+ * - guess: 짝을 못 찾아 행 전체에 적용한 값 (원래 모양으로 다시 만들 수 없음)
+ */
+export type DateSource =
+  | { kind: 'empty' | 'whole' | 'guess' }
+  | { kind: 'entry'; line: number; prefix: string; sep: string }
+
+/** 원본 칸 값: 날짜 / 글자 / 숫자 / 참·거짓 */
+export type RawCell = { d: IsoDate } | { s: string } | { n: number } | { b: boolean }
+
+/**
+ * 원본 DIA의 칸 위치와 원래 값 (붙여넣기용 시트를 만들 때 씀). 이 기능 전에 넣은 DIA에는 없음
+ * 행 번호는 엑셀 행(1부터), 열 번호는 0부터 (A = 0)
+ */
+export interface DiaLayout {
+  sheet: string
+  /** 머리글 마지막 행 */
+  headerRow: number
+  cols: { no: number; wp: number; name?: number; team?: number } & Partial<Record<DiaDateField, number>>
+  /** 산출물이 있는 첫 행 ~ 마지막 행 */
+  firstRow: number
+  lastRow: number
+  /** 붙여넣기 열 범위 (날짜 4칸 + 담당 칸의 왼쪽 끝 ~ 오른쪽 끝) */
+  pasteFrom: number
+  pasteTo: number
+  /** 붙여넣기 범위 안의 원래 값: "행,열" → 값 (빈 칸은 없음) */
+  cells: Record<string, RawCell>
+  /** 병합된 칸이나 수식이 있어 한 번에 붙여 넣을 수 없는 행 */
+  blockedRows: number[]
+  /** 머리글 글자 (참고 표시용): "행,열" → 글자 */
+  headers: Record<string, string>
 }
 
 export interface DiaContent {
   deliverables: Deliverable[]
+  layout?: DiaLayout
 }
 
 export type ItemKind = 'SG' | 'SS' | 'FSR' | 'TSR' | 'FMEA_CAUSE' | 'SSR' | 'SWTEST' | 'HSR'
@@ -222,6 +264,24 @@ export interface Project {
   docLinks: DocLink[]
   /** VR 작성 수동 체크 (산출물 키 → O/X) */
   vrOverrides: Record<string, boolean>
+  /** 산출물 일정 직접 수정 (산출물 키 → 고친 값). DIA 값은 그대로 두고 이 값을 덮어 씀 */
+  scheduleEdits?: Record<string, ScheduleEdit>
+}
+
+/** 담당: 팀 + 사람 */
+export interface Owner {
+  team: string
+  people: string[]
+}
+
+/** 고친 값 + 고칠 때의 DIA 값(base: 새 DIA가 바뀌었는지 비교). 날짜 '' = 비움 */
+export interface ScheduleEdit {
+  planStart?: { value: IsoDate | ''; base: IsoDate | '' }
+  planEnd?: { value: IsoDate | ''; base: IsoDate | '' }
+  realStart?: { value: IsoDate | ''; base: IsoDate | '' }
+  realEnd?: { value: IsoDate | ''; base: IsoDate | '' }
+  owner?: { value: Owner; base: Owner }
+  editedAt: string
 }
 
 export interface ProjectSummary {

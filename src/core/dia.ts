@@ -3,9 +3,10 @@
  * 읽음: No., Part-clause No., Work products, Actual work product name, PLAN Start/End, Real Start/End, In charge of Team
  * 안 읽음: R/S/A, Delivery type, 협의 칸, Status, 코멘트, 다른 시트
  */
-import type { Category, DiaContent, Deliverable, ImportIssue, ImportReport, IsoDate } from './model'
+import type { Category, DateSource, DiaContent, DiaLayout, Deliverable, ImportIssue, ImportReport, IsoDate, RawCell } from './model'
 import { emptyReport } from './model'
 import { type Cell, type Grid, type Workbook, isDateCell } from './xlsx'
+import { colLetter } from './cells'
 import { type DateParse, excelSerialToIso, parseDateText } from './dates'
 import { findCells, sheetHasHeader } from './headers'
 import { isNA, normHeader, splitLines, toHalfWidth } from './text'
@@ -59,6 +60,18 @@ interface DateEntry {
   label: string
   tokens: string[]
   parse: DateParse
+  /** 칸 글의 줄 번호 (0부터) */
+  line: number
+  /** 날짜 앞 글자 ("FMEA: ") */
+  prefix: string
+  /** 날짜 구분 글자 (- . /) */
+  sep: string
+}
+
+/** 날짜 글자의 구분 글자 ("2026.06.05" → ".", 모르면 "-") */
+export function dateSepOf(text: string): string {
+  const m = /(?:\d{4}|yyyy)\s*([-./])/i.exec(text)
+  return m ? m[1] : '-'
 }
 
 interface DateCellParse {
@@ -77,24 +90,27 @@ export function parseDateCell(cell: Cell): DateCellParse {
     const iso = cell > 30_000 && cell < 80_000 ? excelSerialToIso(cell) : undefined
     return { whole: iso ? { kind: 'date', date: iso } : { kind: 'invalid', raw: String(cell) }, entries: [], memo: [] }
   }
-  const lines = splitLines(String(cell))
+  const rawLines = String(cell).split(/\r\n|\r|\n/)
   const entries: DateEntry[] = []
   const memo: string[] = []
-  for (const line of lines) {
+  rawLines.forEach((raw, index) => {
+    const line = raw.trim()
+    if (!line) return
     const m = /^(.+?)\s*[:：]\s*(.*)$/.exec(line)
     if (m) {
       const label = m[1].trim()
-      entries.push({ label, tokens: labelTokens(label), parse: parseDateText(m[2]) })
-      continue
+      const prefix = /^(.*?[:：]\s*)/.exec(raw)?.[1] ?? `${label}: `
+      entries.push({ label, tokens: labelTokens(label), parse: parseDateText(m[2]), line: index, prefix, sep: dateSepOf(m[2]) })
+      return
     }
     const p = parseDateText(line)
-    if (p.kind === 'none') continue
+    if (p.kind === 'none') return
     if (p.kind === 'invalid' && !/\d/.test(line)) {
       memo.push(line) // 날짜 없는 줄 (예: "FTA / DFA 제외") → 메모
-      continue
+      return
     }
-    entries.push({ label: '', tokens: [], parse: p })
-  }
+    entries.push({ label: '', tokens: [], parse: p, line: index, prefix: /^(\s*)/.exec(raw)?.[1] ?? '', sep: dateSepOf(line) })
+  })
   if (entries.length === 1 && entries[0].label === '') return { whole: entries[0].parse, entries: [], memo }
   return { entries, memo }
 }
@@ -106,6 +122,8 @@ interface Line {
   /** 날짜 칸별로 짝지어진 라벨 */
   labels: string[]
   warnings: string[]
+  /** 날짜 칸별로 값이 원본 칸의 어디에서 왔는지 */
+  src: Partial<Record<DateField, DateSource>>
 }
 
 /** 라벨 토큰이 모두 파일 토큰에 들어 있는 파일 중, 남는 토큰이 가장 적은 것 (같으면 애매) */
@@ -131,14 +149,16 @@ function bestFileForLabel(lines: Line[], tokens: string[]): number | undefined {
 
 function assignDates(lines: Line[], field: DateField, parsed: DateCellParse): void {
   const fieldName = DATE_FIELD_LABEL[field]
-  const setValue = (line: Line, p: DateParse, label: string): void => {
+  const setValue = (line: Line, p: DateParse, label: string, src: DateSource): void => {
     if (p.kind === 'date') line.dates[field] = p.date
     else if (p.kind === 'invalid') line.warnings.push(`${fieldName} 날짜 형식 오류: '${p.raw}'`)
     if (label && !line.labels.includes(label)) line.labels.push(label)
+    line.src[field] = src
   }
+  const entrySrc = (e: DateEntry): DateSource => ({ kind: 'entry', line: e.line, prefix: e.prefix, sep: e.sep })
 
   if (parsed.whole) {
-    for (const line of lines) setValue(line, parsed.whole, '')
+    for (const line of lines) setValue(line, parsed.whole, '', { kind: 'whole' })
     return
   }
   const entries = parsed.entries
@@ -146,7 +166,7 @@ function assignDates(lines: Line[], field: DateField, parsed: DateCellParse): vo
 
   if (lines.length === 1 && !lines[0].file) {
     // 파일명 없는 산출물 1줄
-    setValue(lines[0], entries[0].parse, entries[0].label)
+    setValue(lines[0], entries[0].parse, entries[0].label, entrySrc(entries[0]))
     if (entries.length > 1) lines[0].warnings.push(`${fieldName}: 파일명이 없는데 날짜가 ${entries.length}개라 첫 줄만 사용`)
     return
   }
@@ -157,7 +177,7 @@ function assignDates(lines: Line[], field: DateField, parsed: DateCellParse): vo
   for (const e of entries) {
     const i = bestFileForLabel(lines, e.tokens)
     if (i !== undefined && !assigned.has(i)) {
-      setValue(lines[i], e.parse, e.label)
+      setValue(lines[i], e.parse, e.label, entrySrc(e))
       assigned.add(i)
     } else {
       remaining.push(e)
@@ -167,19 +187,22 @@ function assignDates(lines: Line[], field: DateField, parsed: DateCellParse): vo
   const freeLines = lines.map((_, i) => i).filter((i) => !assigned.has(i))
   // 2) 줄 수가 같으면 순서대로
   if (freeLines.length === remaining.length) {
-    remaining.forEach((e, k) => setValue(lines[freeLines[k]], e.parse, e.label))
+    remaining.forEach((e, k) => setValue(lines[freeLines[k]], e.parse, e.label, entrySrc(e)))
     return
   }
   // 3) 그래도 안 되면 행 전체에 적용하고 경고
   const first = remaining[0]
   const labels = remaining.map((e) => e.label || '(라벨 없음)').join(', ')
   for (const i of freeLines.length > 0 ? freeLines : lines.map((_, k) => k)) {
-    if (lines[i].dates[field] === undefined) setValue(lines[i], first.parse, '')
+    if (lines[i].dates[field] === undefined) setValue(lines[i], first.parse, '', { kind: 'guess' })
+    else lines[i].src[field] = { kind: 'guess' }
     lines[i].warnings.push(`${fieldName}: 날짜 짝을 찾지 못해 행 전체에 적용 (${labels})`)
   }
 }
 
 interface HeaderMap {
+  /** 머리글을 찾은 맨 위 행 (0부터) */
+  top: number
   row: number
   no: number
   part?: number
@@ -237,7 +260,7 @@ function findHeaders(grid: Grid, issues: ImportIssue[]): HeaderMap | undefined {
 
   const headerCells = [no, part, name, team, ...starts, ...ends, wpCells[0]].filter(Boolean) as { r: number }[]
   const row = Math.max(...headerCells.map((h) => h.r))
-  return { row, no: no.c, part: part?.c, wp: wpCells[0].c, name: name?.c, team: team?.c, dates }
+  return { top: from, row, no: no.c, part: part?.c, wp: wpCells[0].c, name: name?.c, team: team?.c, dates }
 }
 
 function isSymbolRow(grid: Grid, r: number): boolean {
@@ -276,6 +299,8 @@ export function parseDia(wb: Workbook): DiaParseResult {
   let emptyRun = 0
   let rowCount = 0
   let excludedCount = 0
+  let firstNoRow = -1
+  let lastNoRow = -1
 
   for (let r = h.row + 1; r <= sheet.maxRow; r++) {
     if (!sheet.hasRow(r)) {
@@ -300,6 +325,8 @@ export function parseDia(wb: Workbook): DiaParseResult {
       continue
     }
     rowCount++
+    if (firstNoRow < 0) firstNoRow = r
+    lastNoRow = r
     const diaNo = Number(noText)
     const assignee = parseAssignee(h.team !== undefined ? sheet.text(r, h.team) : '')
     if (assignee.excluded) {
@@ -318,7 +345,8 @@ export function parseDia(wb: Workbook): DiaParseResult {
       fileTokens: file ? docTokens(file) : [],
       dates: {},
       labels: [],
-      warnings: []
+      warnings: [],
+      src: {}
     }))
 
     for (const field of Object.keys(DATE_FIELD_LABEL) as DateField[]) {
@@ -360,17 +388,71 @@ export function parseDia(wb: Workbook): DiaParseResult {
         people: assignee.people,
         memo: [...memo],
         isVR,
-        dateWarnings: [...new Set(line.warnings)]
+        dateWarnings: [...new Set(line.warnings)],
+        dateSrc: line.src
       }
       deliverables.push(d)
       for (const w of d.dateWarnings) report.warnings.push({ where: `${where} (No. ${diaNo}${lines.length > 1 ? `-${i + 1}` : ''})`, message: w })
     })
   }
 
+  const layout = firstNoRow >= 0 ? captureLayout(sheet, h, firstNoRow, lastNoRow) : undefined
   report.counts['산출물'] = deliverables.length
   report.counts['DIA 행'] = rowCount
   if (excludedCount > 0) report.notes.push(`담당이 N/A인 ${excludedCount}행은 일정 대상에서 제외했습니다`)
   const unassigned = deliverables.filter((d) => !d.team && d.people.length === 0).length
   if (unassigned > 0) report.notes.push(`담당이 비어 있는 ${unassigned}줄은 "담당 미지정"으로 넣었습니다`)
-  return { content: { deliverables }, report }
+  return { content: { deliverables, ...(layout ? { layout } : {}) }, report }
+}
+
+function toRaw(v: Cell): RawCell | undefined {
+  if (v === null || v === undefined || v === '') return undefined
+  if (isDateCell(v)) return { d: v.date }
+  if (typeof v === 'number') return { n: v }
+  if (typeof v === 'boolean') return { b: v }
+  return { s: v }
+}
+
+/** 붙여넣기용 시트를 위해 원본의 칸 위치와 원래 값을 기억 (일정 4칸 + 담당 칸) */
+function captureLayout(sheet: Grid, h: HeaderMap, firstNoRow: number, lastNoRow: number): DiaLayout | undefined {
+  const pasteCols = [h.dates.planStart, h.dates.planEnd, h.dates.realStart, h.dates.realEnd, h.team].filter((c): c is number => c !== undefined)
+  if (pasteCols.length === 0) return undefined
+  const pasteFrom = Math.min(...pasteCols)
+  const pasteTo = Math.max(...pasteCols)
+  if (pasteTo - pasteFrom > 30) return undefined // 칸이 너무 떨어져 있으면 한 범위로 붙여 넣을 수 없음
+  const cells: Record<string, RawCell> = {}
+  const blockedRows: number[] = []
+  for (let r = firstNoRow; r <= lastNoRow; r++) {
+    for (let c = pasteFrom; c <= pasteTo; c++) {
+      const raw = toRaw(sheet.get(r, c))
+      if (raw) cells[`${r + 1},${c}`] = raw
+    }
+    if (sheet.hasMergeOrFormula(r, pasteFrom, pasteTo)) blockedRows.push(r + 1)
+  }
+  const headers: Record<string, string> = {}
+  const headerCols = new Set([h.no, h.wp, ...(h.name !== undefined ? [h.name] : [])])
+  for (let c = pasteFrom; c <= pasteTo; c++) headerCols.add(c)
+  for (let r = h.top; r <= h.row; r++) {
+    for (const c of headerCols) {
+      const t = sheet.text(r, c).trim()
+      if (t) headers[`${r + 1},${c}`] = t
+    }
+  }
+  return {
+    sheet: sheet.name,
+    headerRow: h.row + 1,
+    cols: { no: h.no, wp: h.wp, name: h.name, team: h.team, ...h.dates },
+    firstRow: firstNoRow + 1,
+    lastRow: lastNoRow + 1,
+    pasteFrom,
+    pasteTo,
+    cells,
+    blockedRows,
+    headers
+  }
+}
+
+/** 붙여넣기 안내에 쓰는 칸 주소 (예: K12) */
+export function cellAddress(row: number, col: number): string {
+  return `${colLetter(col)}${row}`
 }

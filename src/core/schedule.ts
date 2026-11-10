@@ -6,6 +6,7 @@ import { CATEGORIES } from './model'
 import { activeDeliverables, activeDocs } from './project'
 import { daysBetween, localToday } from './dates'
 import { docTokens, fileNameTokens, jaccard, labelTokens } from './filename'
+import { applyEdit, type EditView } from './edits'
 
 export type ScheduleStatus = '완료' | '진행' | '지연' | '미착수'
 export const SCHEDULE_STATUSES: readonly ScheduleStatus[] = ['완료', '진행', '지연', '미착수']
@@ -36,6 +37,10 @@ export interface ScheduleRow {
   vrManual: boolean
   /** VR 값을 바꿀 때 쓰는 키 (VR 행의 키). 해당 없음이면 undefined */
   vrKey?: string
+  /** 직접 고친 칸 (d에는 고친 값이 들어 있음) */
+  edit?: EditView
+  /** 고치기 전 DIA 값 그대로의 산출물 */
+  dia: Deliverable
 }
 
 export interface ScheduleSummary {
@@ -103,7 +108,9 @@ function sameTokenSet(a: string[], b: string[]): boolean {
 }
 
 export function computeSchedule(p: Project, today: IsoDate): ScheduleRow[] {
-  const deliverables = activeDeliverables(p)
+  const raw = activeDeliverables(p)
+  const applied = raw.map((d) => applyEdit(d, p.scheduleEdits?.[d.key]))
+  const deliverables = applied.map((a) => a.d)
   const links = computeDocLinks(p)
   const docsByKey = new Map<string, DocLinkInfo[]>()
   for (const l of links) {
@@ -130,7 +137,7 @@ export function computeSchedule(p: Project, today: IsoDate): ScheduleRow[] {
     return { mark: vrAuto(vrRow) ? 'O' : 'X', manual: false }
   }
 
-  return deliverables.map((d) => {
+  return deliverables.map((d, index) => {
     const linked = (docsByKey.get(d.key) ?? []).sort((a, b) => b.doc.importedAt.localeCompare(a.doc.importedAt))
     const doc = linked[0]?.doc
     let vr: VrMark = '해당 없음'
@@ -160,7 +167,9 @@ export function computeSchedule(p: Project, today: IsoDate): ScheduleRow[] {
       docLink: linked[0],
       vr,
       vrManual,
-      vrKey
+      vrKey,
+      edit: applied[index].view,
+      dia: raw[index]
     }
   })
 }

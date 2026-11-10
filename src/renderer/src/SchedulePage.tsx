@@ -1,4 +1,4 @@
-/** 산출물 일정 화면 (SPEC §9.2) — 일정·담당은 DIA가 원본이라 여기서 고치지 않음. VR 작성 O/X만 바꿀 수 있음 */
+/** 산출물 일정 화면 (SPEC §9.2) — DIA 값을 보여 주고, 일정·담당은 [고치기]로 직접 고칠 수 있음(고친 값만 따로 저장). VR 작성 O/X도 바꿀 수 있음 */
 import { useMemo, useState, type ReactElement } from 'react'
 import type { Category, IsoDate, Project } from '../../core/model'
 import { CATEGORIES } from '../../core/model'
@@ -15,8 +15,11 @@ import {
   type ScheduleRow,
   type ScheduleStatus
 } from '../../core/schedule'
-import { AlertIcon } from './icons'
+import { AlertIcon, PencilIcon } from './icons'
 import { EmptyState, ScheduleBadge } from './ui'
+import { ScheduleEditDialog } from './ScheduleEditDialog'
+import { activeDeliverables } from '../../core/project'
+import { EDIT_FIELD_LABEL, type EditField } from '../../core/edits'
 
 /** 올해 날짜는 월-일만, 다른 해는 연도까지 */
 function shortDate(d: IsoDate | undefined, today: IsoDate): string {
@@ -78,13 +81,19 @@ export function SchedulePage({
   const [category, setCategory] = useState<Category | '전체'>('전체')
   const [owner, setOwner] = useState('전체')
   const [status, setStatus] = useState<StatusFilter>('전체')
+  const [editedOnly, setEditedOnly] = useState(false)
+  const [editing, setEditing] = useState<string | null>(null)
+  const editedCount = rows.reduce((n, r) => n + (r.edit?.fields.length ?? 0), 0)
+  const changedCount = rows.filter((r) => r.edit?.diaChanged.length).length
 
   const filtered = rows.filter(
     (r) =>
       (category === '전체' || r.d.category === category) &&
       (owner === '전체' || rowMatchesOwner(r, owner)) &&
-      (status === '전체' || (status === '일정 미기재' ? r.noPlan : r.status === status))
+      (status === '전체' || (status === '일정 미기재' ? r.noPlan : r.status === status)) &&
+      (!editedOnly || Boolean(r.edit))
   )
+  const editingRow = editing ? rows.find((r) => r.d.key === editing) : undefined
   const summary = summarize(rows)
   const milestones = project.settings.milestones.filter((m) => /^\d{4}-\d{2}-\d{2}$/.test(m.date))
   const timeline = useMemo(() => buildTimeline(rows, today, milestones.map((m) => m.date)), [rows, today, milestones])
@@ -141,7 +150,19 @@ export function SchedulePage({
         <div className="panel-head">
           <div>
             <h2>산출물별 일정</h2>
-            <p className="muted small">일정·담당은 DIA가 원본입니다. 바꾸려면 DIA를 고쳐서 다시 넣어 주세요. VR 작성만 여기서 바꿀 수 있습니다.</p>
+            <p className="muted small">
+              DIA 값을 보여 줍니다. 일정·담당은 [고치기]로 바꿀 수 있고, 고친 칸은 "수정"으로 표시됩니다. 엑셀 출력의 "DIA 붙여넣기" 시트로 원본 DIA에 옮길 수 있습니다.
+            </p>
+            {(editedCount > 0 || changedCount > 0) && (
+              <p className="small edit-summary">
+                <PencilIcon size={12} /> 직접 고친 칸 {editedCount}개
+                {changedCount > 0 && (
+                  <span className="tag tag-check">
+                    <AlertIcon size={11} /> 고친 뒤 DIA 값이 바뀐 산출물 {changedCount}개
+                  </span>
+                )}
+              </p>
+            )}
           </div>
           <div className="filters">
             <div className="chips" role="group" aria-label="구분">
@@ -160,6 +181,11 @@ export function SchedulePage({
                 ))}
               </select>
             </label>
+            {editedCount > 0 && (
+              <button type="button" className="chip" aria-pressed={editedOnly} onClick={() => setEditedOnly(!editedOnly)}>
+                고친 것만
+              </button>
+            )}
             <label className="select-label">
               상태
               <select value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
@@ -204,7 +230,15 @@ export function SchedulePage({
                   </div>
                 </div>
                 {g.rows.map((r) => (
-                  <ScheduleLine key={r.d.key} r={r} timeline={timeline} today={today} milestones={milestones.map((m) => m.date)} onVr={setVr} />
+                  <ScheduleLine
+                    key={r.d.key}
+                    r={r}
+                    timeline={timeline}
+                    today={today}
+                    milestones={milestones.map((m) => m.date)}
+                    onVr={setVr}
+                    onEdit={() => setEditing(r.d.key)}
+                  />
                 ))}
               </div>
             ))}
@@ -235,7 +269,38 @@ export function SchedulePage({
           <span>기준일 {today}</span>
         </div>
       </section>
+      {editingRow && (
+        <ScheduleEditDialog
+          project={project}
+          row={editingRow}
+          rowLines={activeDeliverables(project).filter((d) => d.diaNo === editingRow.dia.diaNo && d.sourceRow === editingRow.dia.sourceRow)}
+          onSave={(p) => {
+            onChange(p)
+            setEditing(null)
+          }}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </div>
+  )
+}
+
+/** "수정" 표시: 아이콘 + 글자, 마우스를 올리면 DIA 값 */
+function EditTag({ r, fields }: { r: ScheduleRow; fields: EditField[] }): ReactElement | null {
+  const edited = fields.filter((f) => r.edit?.fields.includes(f))
+  if (edited.length === 0) return null
+  const changed = edited.filter((f) => r.edit?.diaChanged.includes(f))
+  const was = edited
+    .map((f) => {
+      const o = r.edit!.original
+      const v = f === 'owner' ? [o.owner.team, ...o.owner.people].filter(Boolean).join(' ') : o[f]
+      return `${EDIT_FIELD_LABEL[f]} DIA: ${v || '빈칸'}`
+    })
+    .join(' · ')
+  return (
+    <span className={`tag ${changed.length > 0 ? 'tag-check' : 'tag-edit'}`} title={was}>
+      {changed.length > 0 ? <AlertIcon size={11} /> : <PencilIcon size={11} />} {changed.length > 0 ? 'DIA 값이 바뀜' : '수정'}
+    </span>
   )
 }
 
@@ -244,13 +309,15 @@ function ScheduleLine({
   timeline,
   today,
   milestones,
-  onVr
+  onVr,
+  onEdit
 }: {
   r: ScheduleRow
   timeline: Timeline
   today: IsoDate
   milestones: IsoDate[]
   onVr: (key: string, v: 'auto' | 'O' | 'X') => void
+  onEdit: () => void
 }): ReactElement {
   const a = assigneeText(r.d)
   const name = `${r.d.workProduct}${r.d.docLabel ? ` [${r.d.docLabel}]` : ''}`
@@ -276,7 +343,10 @@ function ScheduleLine({
         ))}
       </div>
       <div role="cell" className="cell-owner">
-        <div>{a.team}</div>
+        <div>
+          {a.team}
+          <EditTag r={r} fields={['owner']} />
+        </div>
         <div className="muted small">{a.people}</div>
       </div>
       <div role="cell">
@@ -290,15 +360,20 @@ function ScheduleLine({
             {shortDate(r.d.planStart, today)} → {shortDate(r.d.planEnd, today)}
           </span>
           <span className={r.status === '지연' ? 'dday-late' : r.status === '완료' ? 'dday-done' : 'muted'}> {ddayText(r)}</span>
+          <EditTag r={r} fields={['planStart', 'planEnd']} />
         </div>
-        {(r.d.realStart || r.d.realEnd) && (
+        {(r.d.realStart || r.d.realEnd || r.edit?.fields.some((f) => f === 'realStart' || f === 'realEnd')) && (
           <div>
             <span className="date-label">실적</span>
             <span className="mono">
               {shortDate(r.d.realStart, today)} → {shortDate(r.d.realEnd, today)}
             </span>
+            <EditTag r={r} fields={['realStart', 'realEnd']} />
           </div>
         )}
+        <button type="button" className="link-btn small edit-btn" aria-label={`No.${r.d.diaNo}${r.d.lineCount > 1 ? `-${r.d.line}` : ''} ${name} 일정·담당 고치기`} onClick={onEdit}>
+          <PencilIcon size={12} /> 고치기
+        </button>
       </div>
       <div role="cell">
         {r.vr === '해당 없음' || !r.vrKey ? (

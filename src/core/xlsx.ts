@@ -1,6 +1,6 @@
 /**
  * 엑셀(.xlsx, .xls) 읽기 → 시트별 격자. 작업 스레드에서만 쓴다 (SheetJS).
- * - 병합 셀: 왼쪽 위 값을 범위 전체에 채움 (FORMATS §3.2)
+ * - 병합 셀: 왼쪽 위 값을 범위 전체에 채움 (FORMATS §3.2). 병합 범위와 수식 칸 위치도 기억 (붙여넣기용 시트에서 피함)
  * - 날짜 셀: 'YYYY-MM-DD' (시간대 영향 없이)
  * - 사용 범위가 100만 행이어도 실제 값이 있는 셀만 보관
  */
@@ -29,8 +29,18 @@ export class Grid {
   maxRow = -1
   maxCol = -1
   private readonly rows = new Map<number, Map<number, Cell>>()
+  /** 병합 범위 (0부터, 양 끝 포함) */
+  merges: { s: { r: number; c: number }; e: { r: number; c: number } }[] = []
+  /** 수식 칸 "행,열" (0부터) */
+  readonly formulas = new Set<string>()
 
   constructor(readonly name: string) {}
+
+  /** 이 행의 from~to 열에 병합(2칸 이상)이나 수식이 걸려 있는지 */
+  hasMergeOrFormula(r: number, from: number, to: number): boolean {
+    for (let c = from; c <= to; c++) if (this.formulas.has(`${r},${c}`)) return true
+    return this.merges.some((m) => (m.e.r > m.s.r || m.e.c > m.s.c) && m.s.r <= r && r <= m.e.r && m.s.c <= to && from <= m.e.c)
+  }
 
   set(r: number, c: number, v: Cell): void {
     if (v === null || v === '') return
@@ -71,7 +81,7 @@ export function readWorkbook(bytes: Uint8Array): Workbook {
     type: 'array',
     cellNF: true,
     cellDates: false,
-    cellFormula: false,
+    cellFormula: true, // 수식 칸 위치만 기억 (값은 계산된 값을 씀)
     cellHTML: false,
     cellStyles: false,
     sheetStubs: false
@@ -90,8 +100,11 @@ export function readWorkbook(bytes: Uint8Array): Workbook {
       const cell = ws[key] as XLSX.CellObject
       const { r, c } = XLSX.utils.decode_cell(key)
       grid.set(r, c, convertCell(cell, date1904))
+      if (cell.f) grid.formulas.add(`${r},${c}`)
     }
-    fillMerges(grid, (ws['!merges'] as XLSX.Range[] | undefined) ?? [])
+    const merges = (ws['!merges'] as XLSX.Range[] | undefined) ?? []
+    grid.merges = merges.map((m) => ({ s: { r: m.s.r, c: m.s.c }, e: { r: m.e.r, c: m.e.c } }))
+    fillMerges(grid, merges)
     sheets.push(grid)
   }
   return { sheets }
