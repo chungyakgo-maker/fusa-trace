@@ -1,15 +1,29 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { IPC, type FusaApi } from '../shared/ipc'
 
-// 화면(renderer)에 넘겨 주는 기능. M0에서는 실행 환경 정보만 넘긴다.
-// 파일 열기·저장 같은 기능은 M1부터 여기에 추가한다.
-const api = {
+// 화면(renderer)에 넘겨 주는 기능. 화면은 이 목록에 있는 것만 할 수 있다.
+const api: FusaApi = {
   platform: process.platform,
   versions: {
     electron: process.versions.electron ?? '',
     chrome: process.versions.chrome ?? ''
-  }
+  },
+  projects: {
+    list: () => ipcRenderer.invoke(IPC.projectsList),
+    create: (name) => ipcRenderer.invoke(IPC.projectsCreate, name),
+    open: (id) => ipcRenderer.invoke(IPC.projectsOpen, id),
+    last: () => ipcRenderer.invoke(IPC.projectsLast),
+    save: (project) => ipcRenderer.invoke(IPC.projectsSave, project),
+    remove: (id) => ipcRenderer.invoke(IPC.projectsDelete, id)
+  },
+  docs: {
+    pick: () => ipcRenderer.invoke(IPC.docsPick),
+    pathOf: (file) => webUtils.getPathForFile(file),
+    read: (requests) => ipcRenderer.invoke(IPC.docsRead, requests)
+  },
+  exportSchedule: (project, today) => ipcRenderer.invoke(IPC.exportSchedule, project, today),
+  showInFolder: (path) => ipcRenderer.invoke(IPC.showInFolder, path),
+  appInfo: () => ipcRenderer.invoke(IPC.appInfo)
 }
-
-export type FusaApi = typeof api
 
 contextBridge.exposeInMainWorld('fusa', api)

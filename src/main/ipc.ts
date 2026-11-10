@@ -1,0 +1,105 @@
+/** 화면에서 부르는 기능 연결 */
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import type { Project } from '../core/model'
+import { buildScheduleXlsx, exportFileName } from '../core/export'
+import { localToday } from '../core/dates'
+import { IPC, type AppInfo, type ExportResult, type ReadRequest, type SaveResult } from '../shared/ipc'
+import { ProjectStore } from './store'
+import { readDocuments } from './documents'
+import { log } from './log'
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+export function registerIpc(store: ProjectStore, logFile: string): void {
+  ipcMain.handle(IPC.projectsList, () => store.list())
+
+  ipcMain.handle(IPC.projectsCreate, (_e, name: string) => {
+    const p = store.create(String(name ?? '').slice(0, 100))
+    log('info', 'project created')
+    return p
+  })
+
+  ipcMain.handle(IPC.projectsOpen, (_e, id: string) => {
+    const p = store.load(id)
+    if (p) store.setLast(p.id)
+    return p
+  })
+
+  ipcMain.handle(IPC.projectsLast, () => {
+    const id = store.last()
+    if (!id) return null
+    try {
+      return store.load(id)
+    } catch (error) {
+      log('error', `last project load failed: ${errorText(error)}`)
+      return null
+    }
+  })
+
+  ipcMain.handle(IPC.projectsSave, (_e, p: Project): SaveResult => {
+    try {
+      store.save(p)
+      return { ok: true }
+    } catch (error) {
+      log('error', `save failed: ${errorText(error)}`)
+      return { ok: false, error: errorText(error) }
+    }
+  })
+
+  ipcMain.handle(IPC.projectsDelete, (_e, id: string): SaveResult => {
+    try {
+      store.remove(id)
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: errorText(error) }
+    }
+  })
+
+  ipcMain.handle(IPC.docsPick, async (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
+    const options: Electron.OpenDialogOptions = {
+      title: '문서 넣기',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: '엑셀·워드 문서', extensions: ['xlsx', 'xlsm', 'xls', 'docx', 'doc'] },
+        { name: '모든 파일', extensions: ['*'] }
+      ]
+    }
+    const r = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+    return r.canceled ? [] : r.filePaths
+  })
+
+  ipcMain.handle(IPC.docsRead, (_e, requests: ReadRequest[]) => readDocuments(requests))
+
+  ipcMain.handle(IPC.exportSchedule, async (e, p: Project, today: string): Promise<ExportResult> => {
+    try {
+      const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
+      const exportDate = localToday()
+      const options: Electron.SaveDialogOptions = {
+        title: '엑셀 출력',
+        defaultPath: join(app.getPath('documents'), exportFileName(p.name, exportDate)),
+        filters: [{ name: '엑셀', extensions: ['xlsx'] }]
+      }
+      const r = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
+      if (r.canceled || !r.filePath) return { ok: false, canceled: true }
+      const bytes = await buildScheduleXlsx(p, today, exportDate)
+      await writeFile(r.filePath, bytes)
+      log('info', 'export ok')
+      return { ok: true, path: r.filePath }
+    } catch (error) {
+      log('error', `export failed: ${errorText(error)}`)
+      const busy = /EBUSY|EPERM/.test(errorText(error))
+      return { ok: false, error: busy ? '파일이 다른 프로그램(엑셀 등)에서 열려 있어 저장하지 못했습니다. 닫고 다시 시도해 주세요.' : errorText(error) }
+    }
+  })
+
+  ipcMain.handle(IPC.showInFolder, (_e, path: string) => {
+    shell.showItemInFolder(path)
+  })
+
+  ipcMain.handle(IPC.appInfo, (): AppInfo => ({ version: app.getVersion(), dataDir: store.dataDir, logFile }))
+}

@@ -1,12 +1,16 @@
 import { app, BrowserWindow, Menu, session } from 'electron'
 import { join } from 'node:path'
 import { isAllowedUrl, isAppPageUrl } from './security'
+import { initLog, log } from './log'
+import { ProjectStore } from './store'
+import { registerIpc } from './ipc'
 
 // 개발 모드(npm run dev)에서만 electron-vite가 개발 서버 주소를 넣어 준다. 배포된 앱에서는 없음.
 const DEV_SERVER_URL = process.env['ELECTRON_RENDERER_URL']
 
 // 데이터 폴더: %APPDATA%/FuSaTrace (SPEC §3). 앱 준비 전에 정해야 한다.
-app.setPath('userData', join(app.getPath('appData'), 'FuSaTrace'))
+// (실행 확인 테스트는 FUSA_DATA_DIR로 임시 폴더를 씀)
+app.setPath('userData', process.env['FUSA_DATA_DIR'] || join(app.getPath('appData'), 'FuSaTrace'))
 
 // 프록시를 쓰지 않는다. 앱은 어떤 서버에도 접속하지 않는데, 기본값이면 Chromium이 Windows의
 // "프록시 자동 검색"(WPAD: 회사망에서 wpad 서버를 찾아 설정 파일을 받음)을 시도한다. 앱 준비 전에 정해야 한다.
@@ -95,6 +99,10 @@ if (!app.requestSingleInstanceLock()) {
     // Electron 기본 메뉴에는 Electron 홈페이지 링크가 있어서 없앤다
     Menu.setApplicationMenu(null)
     lockDownSession()
+    const dataDir = app.getPath('userData')
+    const logFile = initLog(dataDir)
+    log('info', `start v${app.getVersion()}`)
+    registerIpc(new ProjectStore(dataDir), logFile)
     mainWindow = createWindow()
     mainWindow.on('closed', () => {
       mainWindow = null
@@ -102,4 +110,8 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.on('window-all-closed', () => app.quit())
+
+  // 어떤 오류가 나도 앱이 죽지 않게 기록만 남김
+  process.on('uncaughtException', (error) => log('error', `uncaught: ${error.message}`))
+  process.on('unhandledRejection', (reason) => log('error', `unhandled: ${reason instanceof Error ? reason.message : String(reason)}`))
 }

@@ -73,6 +73,9 @@ jobs:
       - name: 설치 파일 빌드 (Setup · Portable · zip)
         run: npm run dist:win
 
+      - name: 가짜 테스트 문서 만들기
+        run: npm run fixtures
+
       - name: 실행 확인 (빌드된 exe를 띄워서 메뉴 · 외부 요청 0건 확인)
         env:
           SMOKE_EXE: dist/win-unpacked/FuSaTrace.exe
@@ -127,7 +130,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: smoke-screenshot
-          path: dist/smoke/screenshot.png
+          path: dist/smoke/*.png
           if-no-files-found: ignore
           retention-days: 30
 
