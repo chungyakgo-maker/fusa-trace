@@ -2061,3 +2061,48 @@ input[type='date'] {
   background: var(--accent-soft);
   color: var(--accent-strong);
 }
+
+/* ───────── 추적성 크게 보기: 지도만 화면 가득 */
+.map-max-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.map-wrap.map-max {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  border-top: 0;
+  background: var(--surface);
+}
+.map-max-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.map-max-head h2 {
+  margin: 0 auto 0 0;
+  font-size: 17px;
+}
+.map-max-head .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.map-max .map-body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.map-max .map-scroll {
+  height: auto;
+  border-radius: 0;
+}
+.map-max .map-detail {
+  max-height: none;
+}

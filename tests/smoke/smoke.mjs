@@ -5,7 +5,7 @@
 //   - Chromium 네트워크 기록(--log-net-log)으로 앱 코드 밖의 숨은 요청(맞춤법 사전 등)까지 0건인지
 //   - 프로젝트 만들기 → 가짜 문서 넣기(DRM·미지원·판별 불가 포함) → 가져오기 결과 → 반영 → 산출물 일정
 //     → 엑셀 출력 → 다시 열어도 저장돼 있는지 (먼저 npm run fixtures)
-//   - FSR + TSC → 추적성(누락·없는 ID·ID 중복) → 연결 지도·상세 패널 → ID 대응표에서 골라 연결
+//   - FSR + TSC → 추적성(누락·없는 ID·ID 중복) → 추적성 지도·상세 패널·[크게 보기] → ID 대응표에서 골라 연결
 //   - FMEA + SRS → FMEA 근거, 소프트웨어 탭(지도·역방향 확인), ID 대응표(SRS 참조), 엑셀 시트 3
 //   - 산출물 일정 직접 고치기 → 상태 다시 계산 → 엑셀 출력의 DIA 붙여넣기 시트(원본과 같은 칸 주소)
 //   - 내 담당: 내 정보 → 역할 고르기 → ☆ 직접 넣기 → 엑셀 "내 담당만" → 업데이트 기록
@@ -38,6 +38,26 @@ const FIXTURES = fileURLToPath(new URL('../fixtures/generated/', import.meta.url
 const P = '[기능안전]_데모'
 const IMPORT_FILES = [`${P}_DIA_R1.xlsx`, `${P}_(TSC) Verification Report_R1.xls`, '보안문서_DIA.xlsx', '옛날양식.doc', '메모.txt', `${P}_Safety Plan 초안_R2.docx`]
 const dataDir = mkdtempSync(join(tmpdir(), 'fusa-data-'))
+
+
+/** 엑셀 출력 파일을 다 써질 때까지 기다렸다가 읽음 (저장 알림이 먼저 보여도 파일이 덜 써졌을 수 있음) */
+async function readXlsx(path, timeout = 30_000) {
+  const end = Date.now() + timeout
+  let last
+  while (Date.now() < end) {
+    if (existsSync(path)) {
+      try {
+        const book = new ExcelJS.Workbook()
+        await book.xlsx.readFile(path)
+        return book
+      } catch (error) {
+        last = error
+      }
+    }
+    await new Promise((r) => setTimeout(r, 300))
+  }
+  throw last ?? new Error(`엑셀 파일이 만들어지지 않음: ${path}`)
+}
 
 let failures = 0
 function check(ok, message, detail) {
@@ -168,8 +188,7 @@ try {
   await win.getByRole('button', { name: '엑셀 출력' }).click()
   await win.getByRole('button', { name: '저장할 곳 고르기' }).click()
   await win.waitForSelector('text=엑셀로 저장했습니다', { timeout: 30_000 })
-  const wb = new ExcelJS.Workbook()
-  await wb.xlsx.readFile(out)
+  const wb = await readXlsx(out)
   check(wb.worksheets.map((w) => w.name).join(',') === '작성 리스트,담당자별 요약,추적성 누락', '엑셀 출력: 시트 3개 (추적성 누락 포함)', wb.worksheets.map((w) => w.name).join(', '))
   check(wb.getWorksheet('작성 리스트').rowCount === 6 + 22, '엑셀 출력: 22줄', String(wb.getWorksheet('작성 리스트').rowCount - 6))
 
@@ -200,8 +219,7 @@ try {
   check(await win.getByLabel(/DIA 붙여넣기" 시트 포함/).isChecked(), '엑셀 출력: 고친 칸이 있으면 "DIA 붙여넣기" 시트 포함 (기본 켬)')
   await win.getByRole('button', { name: '저장할 곳 고르기' }).click()
   await win.waitForSelector('text=엑셀로 저장했습니다', { timeout: 30_000 })
-  const wbp = new ExcelJS.Workbook()
-  await wbp.xlsx.readFile(outPaste)
+  const wbp = await readXlsx(outPaste)
   const names = wbp.worksheets.map((w) => w.name)
   check(names.includes('DIA 붙여넣기 안내') && names.includes('DIA 붙여넣기'), '엑셀 출력: DIA 붙여넣기 안내 + 붙여넣기 시트', names.join(', '))
   const ps = wbp.getWorksheet('DIA 붙여넣기')
@@ -258,8 +276,7 @@ try {
   await win.getByRole('radio', { name: /내 담당만 13건/ }).check()
   await win.getByRole('button', { name: '저장할 곳 고르기' }).click()
   await win.waitForSelector('text=엑셀로 저장했습니다', { timeout: 30_000 })
-  const wbm = new ExcelJS.Workbook()
-  await wbm.xlsx.readFile(outMine)
+  const wbm = await readXlsx(outMine)
   const listM = wbm.getWorksheet('작성 리스트')
   const saveDefault = String(await app.evaluate(() => globalThis.__fusaSaveDefault))
   check(listM.rowCount - 6 === 13 && String(listM.getCell('A1').value).includes('내 담당') && saveDefault.endsWith('_내담당.xlsx'), '엑셀 출력 "내 담당만": 13줄, 제목에 기준, 파일 이름 끝 _내담당', `${listM.rowCount - 6}줄 · ${listM.getCell('A1').value}`)
@@ -307,6 +324,33 @@ try {
   check(detail.includes('적힌 참조 원문') && detail.includes('FSR.001.099') && detail.includes('없는 ID'), '연결 지도: 카드 누르면 상세 패널 (적힌 참조 원문, 해석 방식)', `${clickMs}ms`)
   check((await win.locator('.map-card.dim').count()) > 0, '연결 지도: 고른 카드의 연결만 강조 (나머지 흐리게)')
   await win.screenshot({ path: screenshotPath.replace(/\.png$/, '-map.png') })
+
+  // ── 추적성 [크게 보기]: 지도만 화면 가득 (다른 화면은 가려짐), 창도 전체 화면, Esc로 닫기
+  check(await win.getByRole('group', { name: '보기' }).getByRole('button', { name: '추적성', exact: true }).getAttribute('aria-pressed') === 'true', '이름 바꿈: 보기 전환 [추적성] / [목록]')
+  await win.getByRole('button', { name: '크게 보기' }).click()
+  await win.waitForSelector('.map-wrap.map-max')
+  const maxInfo = await win.evaluate(() => {
+    const el = document.querySelector('.map-wrap.map-max')
+    const r = el.getBoundingClientRect()
+    const atMenu = document.elementFromPoint(40, Math.round(innerHeight / 2))
+    return { w: Math.round(r.width), h: Math.round(r.height), vw: innerWidth, vh: innerHeight, coversMenu: Boolean(atMenu && el.contains(atMenu)), cards: el.querySelectorAll('.map-card').length }
+  })
+  await new Promise((r) => setTimeout(r, 500))
+  const fullOn = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())
+  check(maxInfo.w === maxInfo.vw && maxInfo.h === maxInfo.vh && maxInfo.coversMenu && maxInfo.cards > 0, '크게 보기: 지도만 창 가득 (왼쪽 메뉴·카드 요약은 가려짐)', `${maxInfo.w}×${maxInfo.h} · 카드 ${maxInfo.cards}개 · 창 전체 화면 ${fullOn ? '켜짐' : '꺼짐'}`)
+  await win.locator('.map-max .map-max-head select').selectOption('SG001')
+  check((await win.locator('.map-max .map-card').count()) < maxInfo.cards, '크게 보기: 안에서 SG 거르기')
+  await win.locator('.map-max .map-card', { hasText: 'TSR-CTL-SG001-012 (중복 #1)' }).click()
+  await win.waitForSelector('.map-max .map-detail', { timeout: 10_000 })
+  check((await win.locator('.map-max .map-detail').innerText()).includes('TSR-CTL-SG001-012'), '크게 보기: 카드 누르면 상세 패널')
+  await win.screenshot({ path: screenshotPath.replace(/\.png$/, '-map-max.png') })
+  await win.keyboard.press('Escape')
+  await win.waitForSelector('.map-wrap.map-max', { state: 'detached' })
+  await new Promise((r) => setTimeout(r, 500))
+  const fullOff = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())
+  check(!fullOff, 'Esc → 크게 보기 닫힘, 창 전체 화면도 꺼짐')
+  await win.locator('.panel-head select').first().selectOption('전체')
+
   await win.getByRole('button', { name: '목록', exact: true }).click()
   const traceText = await win.locator('main').innerText()
   check(traceText.includes('누락 1'), '추적성: TSR 없는 FSR 1개 (누락)')
@@ -376,8 +420,7 @@ try {
   await win.getByRole('button', { name: '저장할 곳 고르기' }).click()
   await win.waitForFunction(() => document.querySelectorAll('.toast').length > 0 && [...document.querySelectorAll('.toast')].some((t) => t.textContent?.includes('엑셀로 저장했습니다')))
   await win.waitForTimeout(500)
-  const wb3 = new ExcelJS.Workbook()
-  await wb3.xlsx.readFile(out2)
+  const wb3 = await readXlsx(out2)
   const s3 = wb3.getWorksheet('추적성 누락')
   const stages = new Set()
   s3?.eachRow((r, i) => i > 1 && stages.add(String(r.getCell(1).value)))

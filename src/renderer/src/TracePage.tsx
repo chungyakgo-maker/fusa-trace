@@ -1,4 +1,4 @@
-/** 추적성 (SPEC §9.1): 시스템 / 소프트웨어 / 하드웨어 탭. M2: 시스템 탭 단계 카드 + 목록 보기 (연결 지도는 M3) */
+/** 추적성 (SPEC §9.1): 시스템 / 소프트웨어 / 하드웨어 탭. 단계 카드 + 추적성(지도) 보기 / 목록 보기. 지도는 [크게 보기]로 화면 가득 */
 import { Fragment, useCallback, useMemo, useState, type ReactElement } from 'react'
 import type { Project, TraceItem } from '../../core/model'
 import { computeSystemTrace, TRACE_STATUSES, type FsrRow, type StageCard, type SystemTrace, type TraceStatus, type TsrRow } from '../../core/trace'
@@ -124,29 +124,33 @@ function SystemTab({ trace, sw, hw, onImport, onGoIdMap }: { trace: SystemTrace;
     sg === '전체' || t.refs.some((r) => r.targets.some((x) => (fsrSgs.get(x) ?? '(SG 없음)') === sg)) || (t.refs.every((r) => r.targets.length === 0) && sg === '(SG 없음)')
   const problems = trace.tsrs.filter((t) => t.problems.length > 0 && (sg === '전체' || tsrInSg(t) || t.refs.every((r) => !isResolved(r))))
 
+  const sgSelect = (
+    <label className="select-label">
+      SG
+      <select value={sg} onChange={(e) => setSg(e.target.value)}>
+        <option value="전체">전체</option>
+        {sgOptions.map((s) => (
+          <option key={s} value={s}>
+            {s}
+            {sgTitle.get(s) ? ` · ${shortText(sgTitle.get(s)!, 24)}` : ''}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+
   return (
     <div className="page-stack">
       <StageCards cards={trace.cards} />
 
-      <section className="panel" aria-label={view === 'map' ? '연결 지도' : 'FSR 기준 연결'}>
+      <section className="panel" aria-label={view === 'map' ? '추적성' : 'FSR 기준 연결'}>
         <div className="panel-head">
           <div>
-            <h2>{view === 'map' ? '연결 지도' : 'FSR → TSR 연결'}</h2>
+            <h2>{view === 'map' ? '추적성' : 'FSR → TSR 연결'}</h2>
             <p className="muted small">문제 있는 항목을 먼저 보여 줍니다. 대상 아님(타 ECU에 요구)은 연결률 계산에서 뺍니다.</p>
           </div>
           <div className="filters">
-            <label className="select-label">
-              SG
-              <select value={sg} onChange={(e) => setSg(e.target.value)}>
-                <option value="전체">전체</option>
-                {sgOptions.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                    {sgTitle.get(s) ? ` · ${shortText(sgTitle.get(s)!, 24)}` : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {sgSelect}
             {view === 'list' && (
             <div className="chips" role="group" aria-label="상태 거르기">
               <button type="button" className="chip" aria-pressed={status === '전체'} onClick={() => setStatus('전체')}>
@@ -161,7 +165,7 @@ function SystemTab({ trace, sw, hw, onImport, onGoIdMap }: { trace: SystemTrace;
             )}
             <div className="view-toggle" role="group" aria-label="보기">
               <button type="button" className="chip" aria-pressed={view === 'map'} onClick={() => setView('map')}>
-                연결 지도
+                추적성
               </button>
               <button type="button" className="chip" aria-pressed={view === 'list'} onClick={() => setView('list')}>
                 목록
@@ -170,7 +174,16 @@ function SystemTab({ trace, sw, hw, onImport, onGoIdMap }: { trace: SystemTrace;
           </div>
         </div>
         {view === 'map' ? (
-          <TraceMap build={build} sys={trace} sw={sw} hw={hw} sg={sg === '전체' ? 'all' : sg === '(SG 없음)' ? UNKNOWN_BLOCK : sg} onGoIdMap={onGoIdMap} />
+          <TraceMap
+            build={build}
+            sys={trace}
+            sw={sw}
+            hw={hw}
+            sg={sg === '전체' ? 'all' : sg === '(SG 없음)' ? UNKNOWN_BLOCK : sg}
+            onGoIdMap={onGoIdMap}
+            title="추적성 — 시스템 (FSR → TSR → FMEA 근거)"
+            filter={sgSelect}
+          />
         ) : (
         <div className="table-scroll">
           <table className="trace-table">
@@ -407,25 +420,29 @@ function SoftwareTab({ sys, sw, hw, onImport, onGoIdMap }: { sys: SystemTrace; s
   const shownRows = rows.filter((r) => status === '전체' || r.status === status).sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status])
   const ssrProblems: SsrRow[] = sw.ssrs.filter((s) => s.problems.length > 0)
 
+  const blockSelect = (
+    <label className="select-label">
+      묶음
+      <select value={block} onChange={(e) => setBlock(e.target.value)}>
+        <option value="전체">전체</option>
+        {blocks.map((b) => (
+          <option key={b}>{b}</option>
+        ))}
+      </select>
+    </label>
+  )
+
   return (
     <div className="page-stack">
       <StageCards cards={sw.cards} />
-      <section className="panel" aria-label={view === 'map' ? '소프트웨어 연결 지도' : 'TSR(S/W) → SSR 연결'}>
+      <section className="panel" aria-label={view === 'map' ? '소프트웨어 추적성' : 'TSR(S/W) → SSR 연결'}>
         <div className="panel-head">
           <div>
-            <h2>{view === 'map' ? '연결 지도' : 'TSR(S/W) → SSR 연결'}</h2>
+            <h2>{view === 'map' ? '추적성' : 'TSR(S/W) → SSR 연결'}</h2>
             <p className="muted small">S/W·S/W+H/W 할당 TSR만 SSR이 필요합니다. 미적용 TSR은 연결률 계산에서 뺍니다.</p>
           </div>
           <div className="filters">
-            <label className="select-label">
-              묶음
-              <select value={block} onChange={(e) => setBlock(e.target.value)}>
-                <option value="전체">전체</option>
-                {blocks.map((b) => (
-                  <option key={b}>{b}</option>
-                ))}
-              </select>
-            </label>
+            {blockSelect}
             {view === 'list' && (
               <div className="chips" role="group" aria-label="상태 거르기">
                 <button type="button" className="chip" aria-pressed={status === '전체'} onClick={() => setStatus('전체')}>
@@ -440,7 +457,7 @@ function SoftwareTab({ sys, sw, hw, onImport, onGoIdMap }: { sys: SystemTrace; s
             )}
             <div className="view-toggle" role="group" aria-label="보기">
               <button type="button" className="chip" aria-pressed={view === 'map'} onClick={() => setView('map')}>
-                연결 지도
+                추적성
               </button>
               <button type="button" className="chip" aria-pressed={view === 'list'} onClick={() => setView('list')}>
                 목록
@@ -449,7 +466,7 @@ function SoftwareTab({ sys, sw, hw, onImport, onGoIdMap }: { sys: SystemTrace; s
           </div>
         </div>
         {view === 'map' ? (
-          <TraceMap build={build} sys={sys} sw={sw} hw={hw} sg={block === '전체' ? 'all' : block} onGoIdMap={onGoIdMap} />
+          <TraceMap build={build} sys={sys} sw={sw} hw={hw} sg={block === '전체' ? 'all' : block} onGoIdMap={onGoIdMap} title="추적성 — 소프트웨어 (TSR → SSR → SW 시험)" filter={blockSelect} />
         ) : (
           <div className="table-scroll">
             <table className="trace-table">
@@ -639,6 +656,18 @@ function HardwareTab({ sys, sw, hw, onImport, onGoIdMap }: { sys: SystemTrace; s
   const rows: HwTsrRow[] = hw.tsrs.filter((t) => block === '전체' || swBlockOf(t.item) === block).sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status])
   const hsrProblems: HsrRow[] = hw.hsrs.filter((h) => h.problems.length > 0)
 
+  const hwBlockSelect = (
+    <label className="select-label">
+      묶음
+      <select value={block} onChange={(e) => setBlock(e.target.value)}>
+        <option value="전체">전체</option>
+        {blocks.map((b) => (
+          <option key={b}>{b}</option>
+        ))}
+      </select>
+    </label>
+  )
+
   return (
     <div className="page-stack">
       <StageCards cards={hw.cards} />
@@ -654,25 +683,17 @@ function HardwareTab({ sys, sw, hw, onImport, onGoIdMap }: { sys: SystemTrace; s
         </section>
       )}
       {hw.hasTsc && (
-        <section className="panel" aria-label={view === 'map' ? '하드웨어 연결 지도' : 'TSR(H/W) → HSR 연결'}>
+        <section className="panel" aria-label={view === 'map' ? '하드웨어 추적성' : 'TSR(H/W) → HSR 연결'}>
           <div className="panel-head">
             <div>
-              <h2>{view === 'map' ? '연결 지도' : 'TSR(H/W) → HSR 연결'}</h2>
+              <h2>{view === 'map' ? '추적성' : 'TSR(H/W) → HSR 연결'}</h2>
               <p className="muted small">H/W·S/W+H/W 할당 TSR만 HSR이 필요합니다. FMEDA는 양식이 정해지지 않아 작성 여부만 봅니다.</p>
             </div>
             <div className="filters">
-              <label className="select-label">
-                묶음
-                <select value={block} onChange={(e) => setBlock(e.target.value)}>
-                  <option value="전체">전체</option>
-                  {blocks.map((b) => (
-                    <option key={b}>{b}</option>
-                  ))}
-                </select>
-              </label>
+              {hwBlockSelect}
               <div className="view-toggle" role="group" aria-label="보기">
                 <button type="button" className="chip" aria-pressed={view === 'map'} onClick={() => setView('map')}>
-                  연결 지도
+                  추적성
                 </button>
                 <button type="button" className="chip" aria-pressed={view === 'list'} onClick={() => setView('list')}>
                   목록
@@ -681,7 +702,7 @@ function HardwareTab({ sys, sw, hw, onImport, onGoIdMap }: { sys: SystemTrace; s
             </div>
           </div>
           {view === 'map' ? (
-            <TraceMap build={build} sys={sys} sw={sw} hw={hw} sg={block === '전체' ? 'all' : block} onGoIdMap={onGoIdMap} />
+            <TraceMap build={build} sys={sys} sw={sw} hw={hw} sg={block === '전체' ? 'all' : block} onGoIdMap={onGoIdMap} title="추적성 — 하드웨어 (TSR → HSR → FMEDA)" filter={hwBlockSelect} />
           ) : (
             <div className="table-scroll">
               <table className="trace-table">

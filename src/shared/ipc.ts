@@ -16,6 +16,7 @@ export const IPC = {
   exportSchedule: 'export:schedule',
   showInFolder: 'shell:showInFolder',
   appInfo: 'app:info',
+  windowFullScreen: 'window:fullScreen',
   profileGet: 'profile:get',
   profileSave: 'profile:save',
   updateGet: 'update:get',
@@ -77,6 +78,8 @@ export interface FusaApi {
   exportSchedule(project: Project, today: IsoDate, options: { includeTrace: boolean; includePaste?: boolean; mineOnly?: boolean }): Promise<ExportResult>
   showInFolder(path: string): Promise<void>
   appInfo(): Promise<AppInfo>
+  /** 창 전체 화면 켜기·끄기 (추적성 [크게 보기]) */
+  setFullScreen(on: boolean): Promise<void>
   /** 내 정보 (팀·이름·직급): 이 PC의 앱 설정 파일에만 저장 */
   profile: {
     get(): Promise<Profile>

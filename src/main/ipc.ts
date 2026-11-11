@@ -17,6 +17,10 @@ function errorText(error: unknown): string {
 }
 
 export function registerIpc(store: ProjectStore, logFile: string, updater: Updater, dataDir: string): void {
+  ipcMain.handle(IPC.windowFullScreen, (e, on: unknown) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    if (win && !win.isDestroyed()) win.setFullScreen(on === true)
+  })
   ipcMain.handle(IPC.profileGet, () => readProfile(dataDir))
   ipcMain.handle(IPC.profileSave, (_e, p: unknown) => saveProfile(dataDir, (p ?? {}) as Partial<Profile>))
   ipcMain.handle(IPC.updateGet, () => updater.getState())

@@ -8,6 +8,12 @@ export interface ChangeEntry {
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    version: '0.8.1',
+    date: '2026-11-11',
+    title: '추적성 크게 보기',
+    items: ['"연결 지도" 이름을 "추적성"으로 바꿈', '추적성 [크게 보기]: 지도만 화면 가득 (창도 전체 화면, Esc로 닫기). 안에서 SG·묶음 거르기와 상세 패널 그대로']
+  },
+  {
     version: '0.8.0',
     date: '2026-11-11',
     title: '내 담당 보기',

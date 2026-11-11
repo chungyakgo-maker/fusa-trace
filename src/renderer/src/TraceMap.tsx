@@ -1,5 +1,5 @@
-/** 연결 지도 (SPEC §9.1): 카드 + 선, 카드를 누르면 위·아래 연결 강조와 상세 패널. 시스템·소프트웨어 탭 공용 */
-import { memo, useEffect, useMemo, useState, type ReactElement } from 'react'
+/** 추적성 지도 (SPEC §9.1): 카드 + 선, 카드를 누르면 위·아래 연결 강조와 상세 패널. [크게 보기]는 지도만 화면 가득. 세 탭 공용 */
+import { memo, useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react'
 import type { TraceItem } from '../../core/model'
 import { connectedOf, nodeIdOf, type MapColumn, type MapLayout, type MapNode, type MapOptions, type NodeTone } from '../../core/traceMap'
 import type { SystemTrace } from '../../core/trace'
@@ -7,7 +7,7 @@ import type { SoftwareTrace } from '../../core/software'
 import type { HardwareTrace } from '../../core/hardware'
 import { isResolved, METHOD_LABEL, type Resolution } from '../../core/resolve'
 import { ORIGIN_LABEL } from '../../core/fsr'
-import { AlertIcon, CheckIcon, CircleIcon, HelpIcon, MinusCircleIcon, PlusIcon, XIcon } from './icons'
+import { AlertIcon, CheckIcon, CircleIcon, HelpIcon, MaximizeIcon, MinusCircleIcon, PlusIcon, XIcon } from './icons'
 import { TraceBadge } from './ui'
 
 const TONE_ICON: Partial<Record<NodeTone, ReactElement>> = {
@@ -79,7 +79,9 @@ export function TraceMap({
   sys,
   sw,
   hw,
-  onGoIdMap
+  onGoIdMap,
+  title,
+  filter
 }: {
   /** 배치 계산 (시스템·소프트웨어·하드웨어) */
   build: (opts: MapOptions) => MapLayout
@@ -88,7 +90,12 @@ export function TraceMap({
   sw: SoftwareTrace
   hw: HardwareTrace
   onGoIdMap: () => void
+  /** 크게 보기 맨 위 제목 */
+  title: string
+  /** 크게 보기에서도 쓰는 거르기 (SG·묶음) */
+  filter?: ReactNode
 }): ReactElement {
+  const [maximized, setMaximized] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [expandAll, setExpandAll] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
@@ -97,6 +104,20 @@ export function TraceMap({
   const layout: MapLayout = useMemo(() => build({ sg, expanded, expandAll }), [build, sg, expanded, expandAll])
   const byId = useMemo(() => new Map(layout.nodes.map((n) => [n.id, n])), [layout])
   const focus = useMemo(() => (selected && byId.has(selected) ? connectedOf(layout, selected) : null), [layout, byId, selected])
+
+  // 크게 보기: 창도 전체 화면으로, Esc로 닫기
+  useEffect(() => {
+    if (!maximized) return
+    void window.fusa.setFullScreen(true)
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setMaximized(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      void window.fusa.setFullScreen(false)
+    }
+  }, [maximized])
 
   useEffect(() => {
     if (!scrollTo) return
@@ -126,7 +147,16 @@ export function TraceMap({
   const selectedNode = selected ? byId.get(selected) : undefined
 
   return (
-    <div className="map-wrap">
+    <div className={`map-wrap${maximized ? ' map-max' : ''}`} role={maximized ? 'dialog' : undefined} aria-modal={maximized || undefined} aria-label={maximized ? title : undefined}>
+      {maximized && (
+        <div className="map-max-head">
+          <h2>{title}</h2>
+          {filter}
+          <button type="button" className="btn btn-small" onClick={() => setMaximized(false)}>
+            <XIcon size={14} /> 닫기 (Esc)
+          </button>
+        </div>
+      )}
       <div className="map-toolbar">
         <button
           type="button"
@@ -164,6 +194,11 @@ export function TraceMap({
             누락 · 없는 ID
           </span>
         </span>
+        {!maximized && (
+          <button type="button" className="btn btn-small map-max-btn" onClick={() => setMaximized(true)}>
+            <MaximizeIcon /> 크게 보기
+          </button>
+        )}
       </div>
 
       <div className="map-body">

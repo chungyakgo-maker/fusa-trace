@@ -25,6 +25,7 @@ const api: FusaApi = {
   exportSchedule: (project, today, options) => ipcRenderer.invoke(IPC.exportSchedule, project, today, options),
   showInFolder: (path) => ipcRenderer.invoke(IPC.showInFolder, path),
   appInfo: () => ipcRenderer.invoke(IPC.appInfo),
+  setFullScreen: (on) => ipcRenderer.invoke(IPC.windowFullScreen, on),
   profile: {
     get: () => ipcRenderer.invoke(IPC.profileGet),
     save: (profile) => ipcRenderer.invoke(IPC.profileSave, profile)
