@@ -2,7 +2,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { Project, ReadOptions } from '../core/model'
+import type { Profile, Project, ReadOptions } from '../core/model'
 import { buildScheduleXlsx, exportFileName } from '../core/export'
 import { localToday } from '../core/dates'
 import { IPC, type AppInfo, type ExportResult, type ReadRequest, type SaveResult } from '../shared/ipc'
@@ -10,12 +10,15 @@ import { ProjectStore } from './store'
 import { previewFile, readDocuments } from './documents'
 import { log } from './log'
 import type { Updater } from './updater'
+import { readProfile, saveProfile } from './appConfig'
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-export function registerIpc(store: ProjectStore, logFile: string, updater: Updater): void {
+export function registerIpc(store: ProjectStore, logFile: string, updater: Updater, dataDir: string): void {
+  ipcMain.handle(IPC.profileGet, () => readProfile(dataDir))
+  ipcMain.handle(IPC.profileSave, (_e, p: unknown) => saveProfile(dataDir, (p ?? {}) as Partial<Profile>))
   ipcMain.handle(IPC.updateGet, () => updater.getState())
   ipcMain.handle(IPC.updateCheck, () => updater.check(false))
   ipcMain.handle(IPC.updateDownload, () => updater.download())
@@ -85,18 +88,19 @@ export function registerIpc(store: ProjectStore, logFile: string, updater: Updat
   ipcMain.handle(IPC.docsRead, (_e, requests: ReadRequest[], options?: ReadOptions) => readDocuments(requests, options ?? {}))
   ipcMain.handle(IPC.docsPreview, (_e, path: string) => previewFile(path))
 
-  ipcMain.handle(IPC.exportSchedule, async (e, p: Project, today: string, exportOptions?: { includeTrace?: boolean; includePaste?: boolean }): Promise<ExportResult> => {
+  ipcMain.handle(IPC.exportSchedule, async (e, p: Project, today: string, exportOptions?: { includeTrace?: boolean; includePaste?: boolean; mineOnly?: boolean }): Promise<ExportResult> => {
     try {
       const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
       const exportDate = localToday()
+      const mineOnly = Boolean(exportOptions?.mineOnly)
       const options: Electron.SaveDialogOptions = {
         title: '엑셀 출력',
-        defaultPath: join(app.getPath('documents'), exportFileName(p.name, exportDate)),
+        defaultPath: join(app.getPath('documents'), exportFileName(p.name, exportDate, mineOnly)),
         filters: [{ name: '엑셀', extensions: ['xlsx'] }]
       }
       const r = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
       if (r.canceled || !r.filePath) return { ok: false, canceled: true }
-      const bytes = await buildScheduleXlsx(p, today, exportDate, { includeTrace: Boolean(exportOptions?.includeTrace), includePaste: Boolean(exportOptions?.includePaste) })
+      const bytes = await buildScheduleXlsx(p, today, exportDate, { includeTrace: Boolean(exportOptions?.includeTrace), includePaste: Boolean(exportOptions?.includePaste), mineOnly, profile: readProfile(dataDir) })
       await writeFile(r.filePath, bytes)
       log('info', 'export ok')
       return { ok: true, path: r.filePath }

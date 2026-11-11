@@ -244,6 +244,30 @@ export interface ProjectSettings {
   readRules?: ReadRule[]
   /** 사용자가 추가한 칸 이름 동의어 (의미 키 → 글자들) */
   synonyms?: Record<string, string[]>
+  /** 내 담당: 역할, 직접 넣고 뺀 산출물 */
+  myScope?: MyScope
+}
+
+/** 내 역할: 세이프티 매니저 / 시스템 / SW / HW */
+export type MyRole = 'sm' | 'system' | 'sw' | 'hw'
+export const MY_ROLES: readonly MyRole[] = ['sm', 'system', 'sw', 'hw']
+
+/** 내 담당 (프로젝트마다): 역할에 맞는 산출물은 자동, ☆로 직접 넣고 뺌 (산출물 키) */
+export interface MyScope {
+  roles: MyRole[]
+  include: string[]
+  exclude: string[]
+  /** DIA 담당 칸에 내 이름이 있으면 넣기 */
+  matchName?: boolean
+  /** DIA 담당 칸의 팀이 내 팀이면 넣기 */
+  matchTeam?: boolean
+}
+
+/** 내 정보 (이 PC의 모든 프로젝트 공통, 데이터 폴더의 app-config.json에만 저장) */
+export interface Profile {
+  team: string
+  name: string
+  title: string
 }
 
 /** 문서 읽기 옵션 (작업 스레드로 넘김) */

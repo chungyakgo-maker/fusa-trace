@@ -1,7 +1,9 @@
-/** 산출물 일정 화면 (SPEC §9.2) — DIA 값을 보여 주고, 일정·담당은 [고치기]로 직접 고칠 수 있음(고친 값만 따로 저장). VR 작성 O/X도 바꿀 수 있음 */
+/** 산출물 일정 화면 (SPEC §9.2) — DIA 값을 보여 주고, 일정·담당은 [고치기]로 직접 고칠 수 있음(고친 값만 따로 저장). VR 작성 O/X도 바꿀 수 있음. [내 담당] 보기 */
 import { useMemo, useState, type ReactElement } from 'react'
-import type { Category, IsoDate, Project } from '../../core/model'
-import { CATEGORIES } from '../../core/model'
+import type { Category, IsoDate, MyScope, Profile, Project } from '../../core/model'
+import { CATEGORIES, MY_ROLES } from '../../core/model'
+import { EMPTY_SCOPE, hasScope, mineOf, reasonText, ROLE_LABEL, ROLE_PARTS, toggleMine, type MineReason } from '../../core/mine'
+import { MinePicker } from './MinePicker'
 import { addDays, daysBetween } from '../../core/dates'
 import {
   assigneeText,
@@ -15,7 +17,7 @@ import {
   type ScheduleRow,
   type ScheduleStatus
 } from '../../core/schedule'
-import { AlertIcon, PencilIcon } from './icons'
+import { AlertIcon, CheckIcon, PencilIcon, StarIcon } from './icons'
 import { EmptyState, ScheduleBadge } from './ui'
 import { ScheduleEditDialog } from './ScheduleEditDialog'
 import { activeDeliverables } from '../../core/project'
@@ -69,15 +71,30 @@ const BAR_CLASS: Record<ScheduleStatus, string> = { 완료: 'bar-done', 진행: 
 export function SchedulePage({
   project,
   today,
+  profile,
   onChange,
+  onProfile,
   onImport
 }: {
   project: Project
   today: IsoDate
+  profile: Profile
   onChange: (p: Project) => void
+  onProfile: (p: Profile) => void
   onImport: () => void
 }): ReactElement {
   const rows = useMemo(() => computeSchedule(project, today), [project, today])
+  const scope = project.settings.myScope
+  const [view, setView] = useState<'all' | 'mine'>(() => (hasScope(scope, profile) ? 'mine' : 'all'))
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const mineByKey = useMemo(() => new Map(rows.map((r) => [r.d.key, mineOf(r.d, scope, profile)])), [rows, scope, profile])
+  const mineRows = rows.filter((r) => mineByKey.get(r.d.key)?.mine)
+  const viewRows = view === 'mine' ? mineRows : rows
+  const setScope = (next: MyScope): void => onChange({ ...project, settings: { ...project.settings, myScope: next } })
+  const pickMine = (): void => {
+    if (hasScope(scope, profile)) setView('mine')
+    else setPickerOpen(true)
+  }
   const [category, setCategory] = useState<Category | '전체'>('전체')
   const [owner, setOwner] = useState('전체')
   const [status, setStatus] = useState<StatusFilter>('전체')
@@ -86,7 +103,7 @@ export function SchedulePage({
   const editedCount = rows.reduce((n, r) => n + (r.edit?.fields.length ?? 0), 0)
   const changedCount = rows.filter((r) => r.edit?.diaChanged.length).length
 
-  const filtered = rows.filter(
+  const filtered = viewRows.filter(
     (r) =>
       (category === '전체' || r.d.category === category) &&
       (owner === '전체' || rowMatchesOwner(r, owner)) &&
@@ -94,7 +111,7 @@ export function SchedulePage({
       (!editedOnly || Boolean(r.edit))
   )
   const editingRow = editing ? rows.find((r) => r.d.key === editing) : undefined
-  const summary = summarize(rows)
+  const summary = summarize(viewRows)
   const milestones = project.settings.milestones.filter((m) => /^\d{4}-\d{2}-\d{2}$/.test(m.date))
   const timeline = useMemo(() => buildTimeline(rows, today, milestones.map((m) => m.date)), [rows, today, milestones])
 
@@ -129,8 +146,57 @@ export function SchedulePage({
     { label: '일정 미기재', value: summary.noPlan, tone: 'warn' }
   ]
 
+  const s0 = scope ?? EMPTY_SCOPE
+  const manualCount = s0.include.length + s0.exclude.length
   return (
     <div className="page-stack">
+      <section className="panel mine-bar" aria-label="내 담당">
+        <div className="seg" role="group" aria-label="보기">
+          <button type="button" aria-pressed={view === 'all'} onClick={() => setView('all')}>
+            전체 산출물 <span className="seg-count">{rows.length}</span>
+          </button>
+          <button type="button" aria-pressed={view === 'mine'} onClick={pickMine}>
+            내 담당 <span className="seg-count">{mineRows.length}</span>
+          </button>
+        </div>
+        <div className="mine-roles" role="group" aria-label="내 역할 (여러 개 고를 수 있음)">
+          <span className="mine-roles-label">내 역할</span>
+          {MY_ROLES.map((r) => {
+            const on = s0.roles.includes(r)
+            return (
+              <button
+                key={r}
+                type="button"
+                className="chip role-chip"
+                aria-pressed={on}
+                title={ROLE_PARTS[r]}
+                onClick={() => {
+                  setScope({ ...s0, roles: on ? s0.roles.filter((x) => x !== r) : [...s0.roles, r] })
+                  if (!on) setView('mine')
+                }}
+              >
+                {on && <CheckIcon size={12} />}
+                {ROLE_LABEL[r]}
+                <span className="role-part">{ROLE_PARTS[r].replace(/ \(.*\)| \+.*/g, '')}</span>
+              </button>
+            )
+          })}
+        </div>
+        <div className="mine-manual small">
+          <span>
+            직접 넣음 {s0.include.length} · 직접 뺌 {s0.exclude.length}
+          </span>
+          {manualCount > 0 && (
+            <button type="button" className="btn btn-small" onClick={() => setScope({ ...s0, include: [], exclude: [] })}>
+              직접 고른 것 원래대로
+            </button>
+          )}
+        </div>
+        <p className="mine-help muted small">
+          역할에 맞는 산출물은 자동으로 들어옵니다 (관리 Part 2·8, 시스템 Part 3·4, HW Part 5, SW Part 6, 세이프티 매니저는 그 외 Part도). ☆를 누르면 역할과 관계없이 직접 넣거나 뺄 수 있고, 다음 DIA 버전에도 유지됩니다.
+        </p>
+      </section>
+
       <div className="summary-cards" role="group" aria-label="상태별 건수 (누르면 거르기)">
         {cards.map((c) => (
           <button
@@ -149,7 +215,7 @@ export function SchedulePage({
       <section className="panel" aria-label="산출물 일정표">
         <div className="panel-head">
           <div>
-            <h2>산출물별 일정</h2>
+            <h2>{view === 'mine' ? `내 담당 산출물 ${viewRows.length}건` : '산출물별 일정'}</h2>
             <p className="muted small">
               DIA 값을 보여 줍니다. 일정·담당은 [고치기]로 바꿀 수 있고, 고친 칸은 "수정"으로 표시됩니다. 엑셀 출력의 "DIA 붙여넣기" 시트로 원본 DIA에 옮길 수 있습니다.
             </p>
@@ -238,11 +304,19 @@ export function SchedulePage({
                     milestones={milestones.map((m) => m.date)}
                     onVr={setVr}
                     onEdit={() => setEditing(r.d.key)}
+                    mine={Boolean(mineByKey.get(r.d.key)?.mine)}
+                    reason={mineByKey.get(r.d.key)?.reason}
+                    highlight={view === 'all'}
+                    onToggleMine={() => setScope(toggleMine(scope, r.d, profile))}
                   />
                 ))}
               </div>
             ))}
-            {filtered.length === 0 && <p className="muted pad">조건에 맞는 산출물이 없습니다.</p>}
+            {filtered.length === 0 && (
+              <p className="muted pad">
+                {view === 'mine' && mineRows.length === 0 ? '내 담당 산출물이 없습니다. 위에서 내 역할을 고르거나, [전체 산출물]에서 ☆를 눌러 넣어 주세요.' : '조건에 맞는 산출물이 없습니다.'}
+              </p>
+            )}
           </div>
         </div>
         <div className="legend">
@@ -269,6 +343,20 @@ export function SchedulePage({
           <span>기준일 {today}</span>
         </div>
       </section>
+      {pickerOpen && (
+        <MinePicker
+          scope={scope}
+          profile={profile}
+          deliverables={rows.map((r) => r.d)}
+          onSave={(next, nextProfile) => {
+            setScope(next)
+            if (nextProfile.name !== profile.name) onProfile(nextProfile)
+            setPickerOpen(false)
+            setView('mine')
+          }}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
       {editingRow && (
         <ScheduleEditDialog
           project={project}
@@ -310,7 +398,11 @@ function ScheduleLine({
   today,
   milestones,
   onVr,
-  onEdit
+  onEdit,
+  mine,
+  reason,
+  highlight,
+  onToggleMine
 }: {
   r: ScheduleRow
   timeline: Timeline
@@ -318,6 +410,11 @@ function ScheduleLine({
   milestones: IsoDate[]
   onVr: (key: string, v: 'auto' | 'O' | 'X') => void
   onEdit: () => void
+  mine: boolean
+  reason?: MineReason
+  /** 전체 보기에서 내 담당 줄을 옅게 칠함 */
+  highlight: boolean
+  onToggleMine: () => void
 }): ReactElement {
   const a = assigneeText(r.d)
   const name = `${r.d.workProduct}${r.d.docLabel ? ` [${r.d.docLabel}]` : ''}`
@@ -325,12 +422,22 @@ function ScheduleLine({
   const hasBar = r.d.planStart && r.d.planEnd && r.d.planEnd >= r.d.planStart
   const reg = r.doc ? `등록 ${r.doc.version || '버전 없음'} · ${r.doc.importedAt.slice(5, 10).replace('-', '/')}` : '미등록'
   return (
-    <div className={`sched-row${r.d.line > 1 ? ' sched-sub' : ''}`} role="row">
+    <div className={`sched-row${r.d.line > 1 ? ' sched-sub' : ''}${mine && highlight ? ' sched-mine' : ''}`} role="row">
       <div role="cell" className="cell-name">
         <div className="name-line">
+          <button
+            type="button"
+            className={`star-btn${mine ? ' on' : ''}`}
+            aria-pressed={mine}
+            aria-label={`No.${r.d.diaNo}${r.d.lineCount > 1 ? `-${r.d.line}` : ''} ${name} — ${mine ? '내 담당에서 빼기' : '내 담당에 넣기'}`}
+            onClick={onToggleMine}
+          >
+            <StarIcon filled={mine} />
+          </button>
           <span className="no">No.{r.d.diaNo}{r.d.lineCount > 1 ? `-${r.d.line}` : ''}</span>
           <strong>{name}</strong>
         </div>
+        {reason && <span className={`tag mine-tag mine-${reason.kind}`}>{reason.kind === 'include' ? '★ ' : ''}{reasonText(reason)}</span>}
         <div className={`sub-line${r.doc ? '' : ' unregistered'}`} title={r.d.expectedFileName || undefined}>
           {reg}
           {r.docLink?.kindMismatch && <span className="tag tag-check"> 확인 필요</span>}

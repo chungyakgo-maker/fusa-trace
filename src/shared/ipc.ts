@@ -1,5 +1,5 @@
 /** 화면(renderer) ↔ 앱 본체(main) 사이에 주고받는 기능 목록 */
-import type { DocKind, IsoDate, ParsedDocument, Project, ProjectSummary, ReadOptions } from '../core/model'
+import type { DocKind, IsoDate, ParsedDocument, Profile, Project, ProjectSummary, ReadOptions } from '../core/model'
 import type { PreviewData } from '../core/rules'
 import type { UpdateState } from '../core/update'
 
@@ -16,6 +16,8 @@ export const IPC = {
   exportSchedule: 'export:schedule',
   showInFolder: 'shell:showInFolder',
   appInfo: 'app:info',
+  profileGet: 'profile:get',
+  profileSave: 'profile:save',
   updateGet: 'update:get',
   updateCheck: 'update:check',
   updateDownload: 'update:download',
@@ -72,9 +74,14 @@ export interface FusaApi {
     /** 칸 지정 화면용 미리보기 (작업 스레드) */
     preview(path: string): Promise<PreviewData | { error: string }>
   }
-  exportSchedule(project: Project, today: IsoDate, options: { includeTrace: boolean; includePaste?: boolean }): Promise<ExportResult>
+  exportSchedule(project: Project, today: IsoDate, options: { includeTrace: boolean; includePaste?: boolean; mineOnly?: boolean }): Promise<ExportResult>
   showInFolder(path: string): Promise<void>
   appInfo(): Promise<AppInfo>
+  /** 내 정보 (팀·이름·직급): 이 PC의 앱 설정 파일에만 저장 */
+  profile: {
+    get(): Promise<Profile>
+    save(profile: Profile): Promise<Profile>
+  }
   /** 업데이트 (GitHub Release). 접속은 앱 본체의 업데이트 전용 연결만 함 */
   update: {
     get(): Promise<UpdateState>

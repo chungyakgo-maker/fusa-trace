@@ -12,7 +12,8 @@ import { computeHardwareTrace } from './hardware'
 import { collectTraceIssues } from './issues'
 import { buildPastePlan, type PastePlan } from './diaPaste'
 import { EDIT_FIELD_LABEL } from './edits'
-import type { RawCell } from './model'
+import type { Profile, RawCell } from './model'
+import { mineOf, scopeText } from './mine'
 
 export const SHEET_LIST = '작성 리스트'
 export const SHEET_OWNERS = '담당자별 요약'
@@ -25,6 +26,10 @@ export interface ExportOptions {
   includeTrace: boolean
   /** 직접 고친 일정·담당을 원본 DIA에 붙여 넣을 시트 포함 */
   includePaste?: boolean
+  /** 시트 1·2를 내 담당 산출물만으로 */
+  mineOnly?: boolean
+  /** 내 정보 (내 담당 이름·팀 찾기) */
+  profile?: Profile
 }
 
 const COLORS = {
@@ -35,9 +40,9 @@ const COLORS = {
   edited: { fill: 'FFFFF4D6', font: 'FF8A6100' }
 }
 
-export function exportFileName(projectName: string, date: IsoDate): string {
+export function exportFileName(projectName: string, date: IsoDate, mineOnly = false): string {
   const safe = projectName.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim() || '프로젝트'
-  return `${safe}_산출물작성리스트_${compactDate(date)}.xlsx`
+  return `${safe}_산출물작성리스트_${compactDate(date)}${mineOnly ? '_내담당' : ''}.xlsx`
 }
 
 function toExcelDate(iso: string | undefined): Date | null {
@@ -91,7 +96,9 @@ function registeredText(r: ScheduleRow): string {
 }
 
 export async function buildScheduleWorkbook(p: Project, today: IsoDate, exportDate: IsoDate, options: ExportOptions = { includeTrace: false }): Promise<ExcelJS.Workbook> {
-  const rows = computeSchedule(p, today)
+  const scope = p.settings.myScope
+  const mineOnly = Boolean(options.mineOnly)
+  const rows = computeSchedule(p, today).filter((r) => !mineOnly || mineOf(r.d, scope, options.profile).mine)
   const s = summarize(rows)
   const wb = new ExcelJS.Workbook()
   wb.creator = 'FuSa Trace'
@@ -101,7 +108,7 @@ export async function buildScheduleWorkbook(p: Project, today: IsoDate, exportDa
   const ws = wb.addWorksheet(SHEET_LIST, {
     pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
   })
-  ws.addRow(['산출물 작성 리스트']).font = { bold: true, size: 14 }
+  ws.addRow([mineOnly ? `산출물 작성 리스트 — 내 담당 (${scopeText(scope, options.profile) || '기준 없음'})` : '산출물 작성 리스트']).font = { bold: true, size: 14 }
   ws.addRow(['프로젝트', p.name])
   ws.addRow(['출력일', exportDate, '기준일', today])
   ws.addRow([

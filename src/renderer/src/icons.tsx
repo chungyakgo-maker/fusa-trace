@@ -143,6 +143,12 @@ export const TrashIcon = ({ size = 16 }: { size?: number }): ReactElement => (
   </Icon>
 )
 
+export const StarIcon = ({ size = 18, filled = false }: { size?: number; filled?: boolean }): ReactElement => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={2} strokeLinejoin="round" aria-hidden="true">
+    <polygon points="12 2.8 14.9 8.7 21.4 9.6 16.7 14.2 17.8 20.6 12 17.6 6.2 20.6 7.3 14.2 2.6 9.6 9.1 8.7" />
+  </svg>
+)
+
 export const PencilIcon = ({ size = 14 }: { size?: number }): ReactElement => (
   <Icon size={size}>
     <path d="M12 20h9" />

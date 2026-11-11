@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
-import type { Project } from '../../core/model'
+import type { Profile, Project } from '../../core/model'
 import { activeDeliverables, activeDocs, addDocument, toSourceDoc } from '../../core/project'
 import { countEdits } from '../../core/edits'
+import { hasScope, mineOf, scopeText } from '../../core/mine'
+import { computeSchedule } from '../../core/schedule'
 import { effectiveToday } from '../../core/schedule'
 import { MENU, type PageId } from './menu'
 import { DownloadIcon, LinkIcon, OfflineIcon, PageIcon, UploadIcon } from './icons'
@@ -28,6 +30,8 @@ function Shell(): ReactElement {
   const toast = useToast()
   const updateState = useUpdateState()
   const [project, setProject] = useState<Project | null>(null)
+  const [profile, setProfile] = useState<Profile>({ team: '', name: '', title: '' })
+  const [mineOnly, setMineOnly] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [page, setPage] = useState<PageId>('schedule')
   const [importPaths, setImportPaths] = useState<string[] | null>(null)
@@ -37,6 +41,17 @@ function Shell(): ReactElement {
   const [exportOpen, setExportOpen] = useState(false)
   const [includeTrace, setIncludeTrace] = useState(true)
   const [includePaste, setIncludePaste] = useState(true)
+
+  useEffect(() => {
+    void window.fusa.profile.get().then(setProfile)
+  }, [])
+  const saveProfile = useCallback(
+    async (p: Profile): Promise<void> => {
+      setProfile(await window.fusa.profile.save(p))
+      toast.show('ok', '내 정보를 저장했습니다.')
+    },
+    [toast]
+  )
 
   useEffect(() => {
     void window.fusa.projects.last().then((p) => {
@@ -84,7 +99,7 @@ function Shell(): ReactElement {
     if (!project) return
     setExportOpen(false)
     setExporting(true)
-    const r = await window.fusa.exportSchedule(project, today, { includeTrace, includePaste: includePaste && editCount > 0 })
+    const r = await window.fusa.exportSchedule(project, today, { includeTrace, includePaste: includePaste && editCount > 0, mineOnly: mineOnly && hasScope(project.settings.myScope, profile) })
     setExporting(false)
     if (r.ok && r.path) {
       const path = r.path
@@ -105,6 +120,11 @@ function Shell(): ReactElement {
     )
 
   const current = MENU.find((m) => m.id === page) ?? MENU[0]
+  const exportRowCount = (() => {
+    if (!exportOpen) return { all: 0, mine: 0 }
+    const rows = computeSchedule(project, today)
+    return { all: rows.length, mine: rows.filter((r) => mineOf(r.d, project.settings.myScope, profile).mine).length }
+  })()
   const hasDia = project.docs.some((d) => d.active && d.kind === 'DIA')
 
   return (
@@ -207,9 +227,11 @@ function Shell(): ReactElement {
           </div>
         </header>
 
-        {page === 'schedule' && <SchedulePage project={project} today={today} onChange={(p) => void update(p)} onImport={() => void pickFiles()} />}
+        {page === 'schedule' && (
+          <SchedulePage project={project} today={today} profile={profile} onChange={(p) => void update(p)} onProfile={(p) => void saveProfile(p)} onImport={() => void pickFiles()} />
+        )}
         {page === 'documents' && <DocumentsPage project={project} onChange={(p) => void update(p)} onImport={() => void pickFiles()} />}
-        {page === 'settings' && <SettingsPage project={project} onChange={(p) => void update(p)} />}
+        {page === 'settings' && <SettingsPage project={project} profile={profile} onChange={(p) => void update(p)} onProfile={(p) => void saveProfile(p)} />}
         {page === 'trace' && <TracePage project={project} onImport={() => void pickFiles()} onGoIdMap={() => setPage('idmap')} />}
         {page === 'idmap' && <IdMapPage project={project} onChange={(p) => void update(p)} />}
       </main>
@@ -253,8 +275,23 @@ function Shell(): ReactElement {
             </>
           }
         >
+          {hasScope(project.settings.myScope, profile) && (
+            <fieldset className="export-range">
+              <legend>출력 범위</legend>
+              <label>
+                <input type="radio" name="range" checked={!mineOnly} onChange={() => setMineOnly(false)} /> 전체 산출물 {exportRowCount.all}건
+              </label>
+              <label>
+                <input type="radio" name="range" checked={mineOnly} onChange={() => setMineOnly(true)} /> 내 담당만 {exportRowCount.mine}건 ({scopeText(project.settings.myScope, profile)})
+              </label>
+            </fieldset>
+          )}
           <p>
-            파일 이름: <span className="mono small">{project.name}_산출물작성리스트_{today.replace(/-/g, '')}.xlsx</span>
+            파일 이름:{' '}
+            <span className="mono small">
+              {project.name}_산출물작성리스트_{today.replace(/-/g, '')}
+              {mineOnly && hasScope(project.settings.myScope, profile) ? '_내담당' : ''}.xlsx
+            </span>
           </p>
           <ul className="export-sheets">
             <li>시트 1 "작성 리스트" — DIA 산출물별 담당·일정·상태·등록 문서·VR</li>

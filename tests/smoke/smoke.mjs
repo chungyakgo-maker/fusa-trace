@@ -8,6 +8,7 @@
 //   - FSR + TSC → 추적성(누락·없는 ID·ID 중복) → 연결 지도·상세 패널 → ID 대응표에서 골라 연결
 //   - FMEA + SRS → FMEA 근거, 소프트웨어 탭(지도·역방향 확인), ID 대응표(SRS 참조), 엑셀 시트 3
 //   - 산출물 일정 직접 고치기 → 상태 다시 계산 → 엑셀 출력의 DIA 붙여넣기 시트(원본과 같은 칸 주소)
+//   - 내 담당: 내 정보 → 역할 고르기 → ☆ 직접 넣기 → 엑셀 "내 담당만" → 업데이트 기록
 //   - 처음 보는 양식: HSR 칸 지정 → 하드웨어 탭 연결, 같은 모양 자동, SW 시험 명세 칸 지정, 동의어 추가
 //   - 대량(TSR 320개): 읽기 시간, 지도 모두 펼치기·카드 누르기·탭 전환 시간
 //   - 업데이트: 가짜 GitHub(내 PC)로 자동 확인·버전 확인·받기·확인값 불일치·업데이트 연결 차단 범위
@@ -216,6 +217,57 @@ try {
   const totalAfter = (await win.locator('.summary-card').first().locator('.summary-value').innerText()).trim()
   check(totalAfter === '22', '다시 열어도 저장된 내용이 그대로', totalAfter)
   check((await win.locator('main').innerText()).includes('직접 고친 칸 3개'), '다시 열어도 고친 칸이 그대로')
+
+  // ── 내 담당: 설정의 내 정보 → [내 담당] → 역할 고르기 → ☆ 직접 넣기 → 엑셀 "내 담당만" → 업데이트 기록
+  await win.locator('.menu-item', { hasText: '설정' }).click()
+  const prof = win.locator('section[aria-labelledby="s-profile"]')
+  await prof.getByLabel('팀', { exact: true }).fill('SW팀')
+  await prof.getByLabel('이름', { exact: true }).fill('최지훈')
+  await prof.getByLabel('직급', { exact: true }).fill('책임')
+  await prof.getByRole('button', { name: '저장' }).click()
+  await win.waitForSelector('text=내 정보를 저장했습니다', { timeout: 10_000 })
+  check(true, '설정: 내 정보(팀·이름·직급) 저장')
+  await win.locator('.menu-item', { hasText: '산출물 일정' }).click()
+  await win.getByRole('button', { name: /^내 담당/ }).click()
+  check((await win.getByLabel('내 이름', { exact: true }).inputValue()) === '최지훈', '내 담당: 처음 누르면 역할 고르기 창 (내 이름은 설정 값)')
+  await win.getByRole('checkbox', { name: /^시스템/ }).check()
+  await win.getByRole('checkbox', { name: /내 이름이 있는 산출물/ }).check()
+  const preview = (await win.locator('.mine-count').innerText()).trim()
+  await win.screenshot({ path: screenshotPath.replace(/\.png$/, '-mine-picker.png') })
+  await win.getByRole('button', { name: '이대로 보기' }).click()
+  await win.waitForSelector('dialog.modal', { state: 'detached' })
+  const mineTotal = (await win.locator('.summary-card').first().locator('.summary-value').innerText()).trim()
+  const tags = (await win.locator('.mine-tag').allInnerTexts()).join(' ')
+  check(preview.includes('12건') && mineTotal === '12' && tags.includes('자동 · 시스템') && tags.includes('자동 · 내 이름'), '내 담당: 시스템(10) + 내 이름(2) = 12건, 들어온 이유 표시', `${preview} / 요약 ${mineTotal}`)
+  await win.getByRole('button', { name: /^전체 산출물/ }).click()
+  await win.getByRole('button', { name: /^No\.8 .*내 담당에 넣기$/ }).click()
+  const mineTab = (await win.getByRole('button', { name: /^내 담당/ }).innerText()).replace(/\s+/g, ' ')
+  check(mineTab.includes('13'), '내 담당: ☆로 직접 넣기 (12 → 13)', mineTab)
+  await win.screenshot({ path: screenshotPath.replace(/\.png$/, '-mine-all.png') })
+  await win.getByRole('button', { name: /^내 담당/ }).click()
+  await win.screenshot({ path: screenshotPath.replace(/\.png$/, '-mine.png') })
+
+  const outMine = join(mkdtempSync(join(tmpdir(), 'fusa-export-')), 'mine.xlsx')
+  await app.evaluate(({ dialog }, path) => {
+    dialog.showSaveDialog = async (...a) => {
+      globalThis.__fusaSaveDefault = (a[1] ?? a[0])?.defaultPath
+      return { canceled: false, filePath: path }
+    }
+  }, outMine)
+  await win.getByRole('button', { name: '엑셀 출력' }).click()
+  await win.getByRole('radio', { name: /내 담당만 13건/ }).check()
+  await win.getByRole('button', { name: '저장할 곳 고르기' }).click()
+  await win.waitForSelector('text=엑셀로 저장했습니다', { timeout: 30_000 })
+  const wbm = new ExcelJS.Workbook()
+  await wbm.xlsx.readFile(outMine)
+  const listM = wbm.getWorksheet('작성 리스트')
+  const saveDefault = String(await app.evaluate(() => globalThis.__fusaSaveDefault))
+  check(listM.rowCount - 6 === 13 && String(listM.getCell('A1').value).includes('내 담당') && saveDefault.endsWith('_내담당.xlsx'), '엑셀 출력 "내 담당만": 13줄, 제목에 기준, 파일 이름 끝 _내담당', `${listM.rowCount - 6}줄 · ${listM.getCell('A1').value}`)
+
+  await win.locator('.menu-item', { hasText: '설정' }).click()
+  const settingsMine = await win.locator('main').innerText()
+  check(settingsMine.includes('직접 고른 산출물 (1)') && settingsMine.includes(`v${version}`) && settingsMine.includes('지금 버전'), '설정: 내 담당(직접 고른 산출물) + 업데이트 기록(지금 버전 표시)')
+  await win.locator('section[aria-labelledby="s-history"]').screenshot({ path: screenshotPath.replace(/\.png$/, '-history.png') })
 
   await win.locator('.menu-item', { hasText: '문서 관리' }).click()
   const docsText = await win.locator('main').innerText()

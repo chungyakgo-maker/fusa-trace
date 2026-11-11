@@ -105,7 +105,7 @@ if (!app.requestSingleInstanceLock()) {
     const logFile = initLog(dataDir)
     log('info', `start v${app.getVersion()}`)
     const updater = new Updater(dataDir)
-    registerIpc(new ProjectStore(dataDir), logFile, updater)
+    registerIpc(new ProjectStore(dataDir), logFile, updater, dataDir)
     mainWindow = createWindow()
     mainWindow.once('ready-to-show', () => updater.scheduleAutoCheck())
     mainWindow.on('closed', () => {

@@ -11,7 +11,7 @@
 import { app, BrowserWindow, session, shell, type Session } from 'electron'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import {
   isAllowedUpdateUrl,
@@ -30,6 +30,7 @@ import {
 } from '../core/update'
 import { IPC } from '../shared/ipc'
 import { log } from './log'
+import { readAppConfig, writeAppConfig } from './appConfig'
 
 // 실행 확인 테스트 전용: 내 PC의 가짜 GitHub (127.0.0.1의 http 주소만 받아들임)
 const TEST_ORIGIN = testOverrideOrigin(process.env['FUSA_UPDATE_API'])
@@ -37,9 +38,6 @@ const API_URL = TEST_ORIGIN ? process.env['FUSA_UPDATE_API']! : UPDATE_API_URL
 const MAX_DOWNLOAD = 600 * 1024 * 1024
 const AUTO_CHECK_DELAY_MS = 3_000
 
-interface AppConfig {
-  autoCheckUpdates?: boolean
-}
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -70,13 +68,13 @@ function networkError(error: unknown): string {
 
 export class Updater {
   private readonly ses: Session
-  private readonly configFile: string
+  private readonly dataDir: string
   private release: ReleaseInfo | undefined
   private expectedHash: string | undefined
   private state: UpdateState
 
   constructor(dataDir: string) {
-    this.configFile = join(dataDir, 'app-config.json')
+    this.dataDir = dataDir
     this.ses = session.fromPartition('fusa-update') // 'persist:' 없음 → 쿠키·캐시를 디스크에 남기지 않음
     // 세션마다 맞춤법 사전을 따로 받으려 함(Google 서버, 요청 차단기에 안 보임) → 기본 세션과 같이 막음
     this.ses.setSpellCheckerLanguages([])
@@ -90,24 +88,16 @@ export class Updater {
     })
     this.ses.setPermissionRequestHandler((_w, _p, callback) => callback(false))
     this.ses.setPermissionCheckHandler(() => false)
-    this.state = { phase: 'idle', current: app.getVersion(), variant: detectVariant(), autoCheck: this.readConfig().autoCheckUpdates !== false, auto: false }
+    this.state = { phase: 'idle', current: app.getVersion(), variant: detectVariant(), autoCheck: readAppConfig(dataDir).autoCheckUpdates !== false, auto: false }
   }
 
   getState(): UpdateState {
     return this.state
   }
 
-  private readConfig(): AppConfig {
-    try {
-      return JSON.parse(readFileSync(this.configFile, 'utf-8')) as AppConfig
-    } catch {
-      return {}
-    }
-  }
-
   setAutoCheck(on: boolean): UpdateState {
     try {
-      writeFileSync(this.configFile, JSON.stringify({ ...this.readConfig(), autoCheckUpdates: on }, null, 2), 'utf-8')
+      writeAppConfig(this.dataDir, { autoCheckUpdates: on })
     } catch (error) {
       log('error', `update: config save failed: ${errorText(error)}`)
     }
