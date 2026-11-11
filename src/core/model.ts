@@ -274,6 +274,8 @@ export interface Profile {
 export interface ReadOptions {
   rules?: ReadRule[]
   synonyms?: Record<string, string[]>
+  /** DRM 파일 표식 (설정, 이 PC에만) */
+  drmMarkers?: string[]
 }
 
 export interface Project {

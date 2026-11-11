@@ -1,4 +1,4 @@
-/** 설정 (SPEC §9.5): 프로젝트 이름, 오늘 기준일, 마일스톤, 내 정보, 내 담당, 칸 이름 동의어, 칸 지정 규칙, 업데이트, 업데이트 기록 */
+/** 설정 (SPEC §9.5): 프로젝트 이름, 오늘 기준일, 마일스톤, 내 정보, 내 담당, 칸 이름 동의어, 칸 지정 규칙, 문서 읽기(DRM 표식), 업데이트, 업데이트 기록, 앱 정보 */
 import { useEffect, useState, type ReactElement } from 'react'
 import type { MyScope, Profile, Project } from '../../core/model'
 import { DOC_KIND_LABEL, MY_ROLES } from '../../core/model'
@@ -12,6 +12,7 @@ import { localToday } from '../../core/dates'
 import type { AppInfo } from '../../shared/ipc'
 import { PlusIcon, TrashIcon } from './icons'
 import { UpdateSection } from './Update'
+import { Disclosure } from './ui'
 
 export function SettingsPage({
   project,
@@ -186,28 +187,11 @@ export function SettingsPage({
         <p className="muted small">규칙을 지워도 이미 넣은 문서는 그대로입니다. 다시 읽으려면 문서를 다시 넣어 주세요.</p>
       </section>
 
+      <DrmSection />
+
       <UpdateSection />
 
-      <section className="panel pad-panel" aria-labelledby="s-history">
-        <h2 id="s-history">업데이트 기록</h2>
-        <ol className="history">
-          {CHANGELOG.map((c) => (
-            <li key={c.version}>
-              <div className="history-head">
-                <strong className="mono">v{c.version}</strong>
-                <span className="muted small">{c.date}</span>
-                <span>{c.title}</span>
-                {c.version === (info?.version ?? __APP_VERSION__) && <span className="tag tag-edit">지금 버전</span>}
-              </div>
-              <ul>
-                {c.items.map((i) => (
-                  <li key={i}>{i}</li>
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ol>
-      </section>
+      <HistorySection version={info?.version ?? __APP_VERSION__} />
 
       <section className="panel pad-panel" aria-labelledby="s-info">
         <h2 id="s-info">앱 정보</h2>
@@ -218,11 +202,115 @@ export function SettingsPage({
           <dd className="mono small">{info?.dataDir ?? '-'}</dd>
           <dt>로그 파일</dt>
           <dd className="mono small">{info?.logFile ?? '-'} (문서 내용은 기록하지 않음)</dd>
-          <dt>인터넷 연결</dt>
-          <dd>업데이트 확인·받기만 (GitHub). 문서·프로젝트 내용은 보내지 않음, 통계 수집 없음</dd>
+          <dt>만든이</dt>
+          <dd>{APP_AUTHOR}</dd>
         </dl>
       </section>
     </div>
+  )
+}
+
+/** 앱 정보의 만든이 (사용자 결정 2026-11-11, docs/DECISIONS.md) */
+export const APP_AUTHOR = '전자설계2팀 이세영 연구원'
+
+function HistoryEntry({ c, current }: { c: (typeof CHANGELOG)[number]; current: boolean }): ReactElement {
+  return (
+    <li>
+      <div className="history-head">
+        <strong className="mono">v{c.version}</strong>
+        <span className="muted small">{c.date}</span>
+        <span>{c.title}</span>
+        {current && <span className="tag tag-edit">지금 버전</span>}
+      </div>
+      <ul>
+        {c.items.map((i) => (
+          <li key={i}>{i}</li>
+        ))}
+      </ul>
+    </li>
+  )
+}
+
+/** 업데이트 기록: 지금 버전만 펼쳐 두고, 지난 기록은 접어 둠 */
+function HistorySection({ version }: { version: string }): ReactElement {
+  const now = CHANGELOG.find((c) => c.version === version) ?? CHANGELOG[0]
+  const past = CHANGELOG.filter((c) => c !== now)
+  return (
+    <section className="panel pad-panel" aria-labelledby="s-history">
+      <h2 id="s-history">업데이트 기록</h2>
+      <ol className="history">
+        <HistoryEntry c={now} current={now.version === version} />
+      </ol>
+      {past.length > 0 && (
+        <Disclosure summary={`지난 기록 보기 (${past.length}개 버전)`}>
+          <ol className="history">
+            {past.map((c) => (
+              <HistoryEntry key={c.version} c={c} current={false} />
+            ))}
+          </ol>
+        </Disclosure>
+      )}
+    </section>
+  )
+}
+
+/** 문서 읽기 — DRM 파일 표식: 파일 앞부분에 이 글자가 있으면 "DRM으로 잠긴 파일"로 안내 (이 PC의 앱 설정에만 저장) */
+function DrmSection(): ReactElement {
+  const [saved, setSaved] = useState<string[] | null>(null)
+  const [text, setText] = useState('')
+  const [done, setDone] = useState(false)
+  useEffect(() => {
+    void window.fusa.drmMarkers.get().then((m) => {
+      setSaved(m)
+      setText(m.join('\n'))
+    })
+  }, [])
+  const list = text
+    .split(/[\n,]/)
+    .map((x) => x.trim())
+    .filter(Boolean)
+  const changed = saved !== null && list.join('\n') !== saved.join('\n')
+  return (
+    <section className="panel pad-panel" aria-labelledby="s-drm">
+      <h2 id="s-drm">문서 읽기 — DRM 파일 표식</h2>
+      <p className="muted small">
+        회사 보안 프로그램(DRM)으로 잠긴 파일은 앞부분에 정해진 영문 글자가 들어 있습니다. 그 글자를 적어 두면, 잠긴 파일을 넣었을 때 "읽을 수 없는 파일" 대신 "보안(DRM)이 걸린 파일 — 해제 후 넣어 주세요"로 안내합니다. 한 줄에 하나, 최대 10개. 이 PC에만 저장합니다.
+      </p>
+      <form
+        className="drm-form"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void window.fusa.drmMarkers.save(list).then((m) => {
+            setSaved(m)
+            setText(m.join('\n'))
+            setDone(true)
+          })
+        }}
+      >
+        <label>
+          DRM 파일 표식
+          <textarea
+            rows={3}
+            value={text}
+            placeholder="예: 메모장으로 잠긴 파일을 열었을 때 맨 앞에 보이는 영문 이름"
+            onChange={(e) => {
+              setText(e.target.value)
+              setDone(false)
+            }}
+          />
+        </label>
+        <div className="drm-actions">
+          <button type="submit" className="btn" disabled={!changed}>
+            저장
+          </button>
+          {done && !changed && (
+            <span className="muted small" role="status">
+              저장했습니다 ({saved?.length ?? 0}개). 문서를 다시 넣을 때부터 적용됩니다.
+            </span>
+          )}
+        </div>
+      </form>
+    </section>
   )
 }
 

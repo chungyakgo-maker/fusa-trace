@@ -7,7 +7,7 @@ const P = '[기능안전]_데모'
 const pad = (n) => String(n).padStart(3, '0')
 
 /** 요구사항 표 1개 */
-function reqTable(k, { id, fsr, asil = 'B', alt = k % 2 === 0 }) {
+export function reqTable(k, { id, fsr, asil = 'B', alt = k % 2 === 0 }) {
   return table([
     ['Item', 'Description'],
     ['Requirement Identifier', id],

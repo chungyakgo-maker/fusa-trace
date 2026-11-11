@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { MENU } from '../src/renderer/src/menu'
 
 describe('왼쪽 메뉴', () => {
-  it('SPEC §9 순서: 추적성 / 산출물 일정 / ID 대응표 / 문서 관리 / 설정', () => {
-    expect(MENU.map((m) => m.label)).toEqual(['추적성', '산출물 일정', 'ID 대응표', '문서 관리', '설정'])
+  it('SPEC §9 순서: 검사 결과 / 추적성 / 산출물 일정 / ID 대응표 / 문서 관리 / 설정 (M6, 재배치는 M8)', () => {
+    expect(MENU.map((m) => m.label)).toEqual(['검사 결과', '추적성', '산출물 일정', 'ID 대응표', '문서 관리', '설정'])
   })
 
   it('id가 겹치지 않음', () => {

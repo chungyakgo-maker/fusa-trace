@@ -1,15 +1,14 @@
 /**
- * 엑셀 출력 (SPEC §10): 시트 1 "작성 리스트", 시트 2 "담당자별 요약", 시트 3 "추적성 누락"(선택),
+ * 엑셀 출력 (SPEC §10, 보조 출력): 시트 1 "작성 리스트", 시트 2 "담당자별 요약", 시트 3 "추적성 누락"(선택, 검사 엔진 결과),
  * "DIA 붙여넣기 안내" + "DIA 붙여넣기"(선택: 직접 고친 일정·담당을 원본 DIA에 붙여 넣기). 메인 프로세스에서 실행 (ExcelJS)
  */
 import ExcelJS from 'exceljs'
 import type { IsoDate, Project } from './model'
 import { assigneeText, computeSchedule, ddayText, summarize, summarizeByOwner, type ScheduleRow } from './schedule'
 import { compactDate } from './dates'
-import { computeSystemTrace } from './trace'
-import { computeSoftwareTrace } from './software'
-import { computeHardwareTrace } from './hardware'
-import { collectTraceIssues } from './issues'
+import { runChecks } from './check'
+import { writeFindingsSheet } from './checkReport'
+import { autoWidth, paint, styleHeader } from './xlsxStyle'
 import { buildPastePlan, type PastePlan } from './diaPaste'
 import { EDIT_FIELD_LABEL } from './edits'
 import type { Profile, RawCell } from './model'
@@ -49,40 +48,6 @@ function toExcelDate(iso: string | undefined): Date | null {
   if (!iso) return null
   const [y, m, d] = iso.split('-').map(Number)
   return new Date(Date.UTC(y, m - 1, d))
-}
-
-/** 글자 폭 (한글 2칸) */
-function textWidth(v: unknown): number {
-  const s = v instanceof Date ? '2026-01-01' : String(v ?? '')
-  return Math.max(
-    0,
-    ...s.split('\n').map((line) => [...line].reduce((w, ch) => w + (/[ᄀ-ￜ]/.test(ch) ? 2 : 1), 0))
-  )
-}
-
-function autoWidth(ws: ExcelJS.Worksheet, fromRow: number, min = 6, max = 60): void {
-  ws.columns.forEach((col, i) => {
-    let w = min
-    ws.eachRow((row, r) => {
-      if (r < fromRow) return
-      w = Math.max(w, textWidth(row.getCell(i + 1).value) + 2)
-    })
-    col.width = Math.min(max, w)
-  })
-}
-
-function styleHeader(row: ExcelJS.Row): void {
-  row.eachCell((cell) => {
-    cell.font = { bold: true }
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerFill } }
-    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
-    cell.border = { bottom: { style: 'thin', color: { argb: 'FF9AA1AD' } } }
-  })
-}
-
-function paint(cell: ExcelJS.Cell, c: { fill: string; font: string }): void {
-  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: c.fill } }
-  cell.font = { color: { argb: c.font }, bold: true }
 }
 
 export const LIST_HEADERS = [
@@ -179,20 +144,10 @@ export async function buildScheduleWorkbook(p: Project, today: IsoDate, exportDa
   os.autoFilter = { from: { row: 1, column: 1 }, to: { row: Math.max(1, os.rowCount), column: 7 } }
   autoWidth(os, 1, 8, 40)
 
-  // ── 시트 3: 추적성 누락 (선택)
+  // ── 시트 3: 추적성 누락 (선택) — 검사 결과 화면·검사 리포트와 같은 검사 엔진 결과
   if (options.includeTrace) {
-    const issues = collectTraceIssues(computeSystemTrace(p), computeSoftwareTrace(p), computeHardwareTrace(p))
     const ts = wb.addWorksheet(SHEET_TRACE, { pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 } })
-    styleHeader(ts.addRow(['단계', '항목 ID', '제목', '문제 종류', '출처 문서']))
-    for (const i of issues) {
-      const row = ts.addRow([i.stage, i.id, i.title, i.problem, i.source])
-      row.getCell(3).alignment = { wrapText: true, vertical: 'top' }
-      if (i.problem.startsWith('누락') || i.problem.startsWith('없는') || i.problem.includes('TSR 없음') || i.problem.includes('TSR 연결 없음')) paint(row.getCell(4), COLORS.delayed)
-    }
-    if (issues.length === 0) ts.addRow(['', '', '누락·확인 필요 항목이 없습니다', '', ''])
-    ts.views = [{ state: 'frozen', ySplit: 1, xSplit: 0 }]
-    ts.autoFilter = { from: { row: 1, column: 1 }, to: { row: Math.max(1, ts.rowCount), column: 5 } }
-    autoWidth(ts, 1, 8, 60)
+    writeFindingsSheet(ts, runChecks(p).findings)
   }
   if (options.includePaste) addPasteSheets(wb, buildPastePlan(p))
   return wb

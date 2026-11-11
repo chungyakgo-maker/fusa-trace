@@ -7,6 +7,7 @@
 //     → 엑셀 출력 → 다시 열어도 저장돼 있는지 (먼저 npm run fixtures)
 //   - FSR + TSC → 추적성(누락·없는 ID·ID 중복) → 추적성 지도·상세 패널·[크게 보기] → ID 대응표에서 골라 연결
 //   - FMEA + SRS → FMEA 근거, 소프트웨어 탭(지도·역방향 확인), ID 대응표(SRS 참조), 엑셀 시트 3
+//   - 검사 결과(M6): 오류·경고·참고, 문서별 막대, 지적 → 추적성 지도 강조, 검사 리포트
 //   - 산출물 일정 직접 고치기 → 상태 다시 계산 → 엑셀 출력의 DIA 붙여넣기 시트(원본과 같은 칸 주소)
 //   - 내 담당: 내 정보 → 역할 고르기 → ☆ 직접 넣기 → 엑셀 "내 담당만" → 업데이트 기록
 //   - 처음 보는 양식: HSR 칸 지정 → 하드웨어 탭 연결, 같은 모양 자동, SW 시험 명세 칸 지정, 동의어 추가
@@ -18,7 +19,7 @@
 //   npm run build && npm run smoke                       ← out/ 폴더의 앱을 실행
 //   SMOKE_EXE=dist/win-unpacked/FuSaTrace.exe npm run smoke  ← 설치 파일과 같은 exe를 실행 (Actions)
 import { _electron as electron } from 'playwright-core'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
@@ -26,7 +27,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ExcelJS from 'exceljs'
 
-const EXPECTED_MENU = ['추적성', '산출물 일정', 'ID 대응표', '문서 관리', '설정']
+const EXPECTED_MENU = ['검사 결과', '추적성', '산출물 일정', 'ID 대응표', '문서 관리', '설정']
 const { version } = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf-8'))
 const exe = process.env.SMOKE_EXE
 const screenshotPath = process.env.SMOKE_SCREENSHOT ?? 'dist/smoke/screenshot.png'
@@ -38,6 +39,8 @@ const FIXTURES = fileURLToPath(new URL('../fixtures/generated/', import.meta.url
 const P = '[기능안전]_데모'
 const IMPORT_FILES = [`${P}_DIA_R1.xlsx`, `${P}_(TSC) Verification Report_R1.xls`, '보안문서_DIA.xlsx', '옛날양식.doc', '메모.txt', `${P}_Safety Plan 초안_R2.docx`]
 const dataDir = mkdtempSync(join(tmpdir(), 'fusa-data-'))
+// 설정 → 문서 읽기의 "DRM 파일 표식"을 미리 적어 둔 PC처럼 (가짜 표식 FAKEDRM, 실제 표식은 저장소에 없음)
+writeFileSync(join(dataDir, 'app-config.json'), JSON.stringify({ drmMarkers: ['FAKEDRM'] }), 'utf-8')
 
 
 /** 엑셀 출력 파일을 다 써질 때까지 기다렸다가 읽음 (저장 알림이 먼저 보여도 파일이 덜 써졌을 수 있음) */
@@ -133,7 +136,7 @@ try {
   check(true, '프로젝트 만들기')
 
   const labels = (await win.locator('.menu-item').allInnerTexts()).map((t) => t.trim().replace(/\s*\d+$/, ''))
-  check(JSON.stringify(labels) === JSON.stringify(EXPECTED_MENU), '메뉴 5개 (SPEC §9 순서)', labels.join(' / '))
+  check(JSON.stringify(labels) === JSON.stringify(EXPECTED_MENU), '메뉴 6개 (SPEC §9 순서)', labels.join(' / '))
   for (const label of EXPECTED_MENU) {
     await win.locator('.menu-item', { hasText: label }).click()
     const heading = (await win.locator('main h1').innerText()).trim()
@@ -284,7 +287,25 @@ try {
   await win.locator('.menu-item', { hasText: '설정' }).click()
   const settingsMine = await win.locator('main').innerText()
   check(settingsMine.includes('직접 고른 산출물 (1)') && settingsMine.includes(`v${version}`) && settingsMine.includes('지금 버전'), '설정: 내 담당(직접 고른 산출물) + 업데이트 기록(지금 버전 표시)')
-  await win.locator('section[aria-labelledby="s-history"]').screenshot({ path: screenshotPath.replace(/\.png$/, '-history.png') })
+  const history = win.locator('section[aria-labelledby="s-history"]')
+  const pastBtn = history.getByRole('button', { name: /지난 기록 보기/ })
+  const closedRows = await history.locator('.history-head').count()
+  await pastBtn.click()
+  const openRows = await history.locator('.history-head').count()
+  check(closedRows === 1 && openRows > 1 && (await pastBtn.getAttribute('aria-expanded')) === 'true', '설정: 업데이트 기록은 지금 버전만 보이고 지난 기록은 접힘 → 펼침', `${closedRows} → ${openRows}`)
+  await history.screenshot({ path: screenshotPath.replace(/\.png$/, '-history.png') })
+  const drmBox = win.getByRole('textbox', { name: 'DRM 파일 표식' })
+  check((await drmBox.inputValue()) === 'FAKEDRM', '설정: 문서 읽기 — DRM 파일 표식 (이 PC 설정에서 읽음)')
+  await drmBox.fill('FAKEDRM\nFAKEDRM2')
+  await win.locator('section[aria-labelledby="s-drm"]').getByRole('button', { name: '저장' }).click()
+  await win.locator('section[aria-labelledby="s-drm"] [role="status"]').waitFor({ timeout: 5000 })
+  await win.locator('section[aria-labelledby="s-drm"]').screenshot({ path: screenshotPath.replace(/\.png$/, '-drm.png') })
+  await win.locator('section[aria-labelledby="s-info"]').screenshot({ path: screenshotPath.replace(/\.png$/, '-info.png') })
+  const savedCfg = JSON.parse(readFileSync(join(dataDir, 'app-config.json'), 'utf-8'))
+  check(JSON.stringify(savedCfg.drmMarkers) === '["FAKEDRM","FAKEDRM2"]', '설정: DRM 파일 표식 저장 → 이 PC의 앱 설정 파일', JSON.stringify(savedCfg.drmMarkers))
+  const infoText = await win.locator('section[aria-labelledby="s-info"]').innerText()
+  const settingsAll = await win.locator('main').innerText()
+  check(infoText.includes('만든이') && !/github|release 페이지/i.test(settingsAll), '설정: 앱 정보에 만든이, 화면에 GitHub·Release 페이지 문구 없음')
 
   await win.locator('.menu-item', { hasText: '문서 관리' }).click()
   const docsText = await win.locator('main').innerText()
@@ -422,10 +443,45 @@ try {
   await win.waitForTimeout(500)
   const wb3 = await readXlsx(out2)
   const s3 = wb3.getWorksheet('추적성 누락')
-  const stages = new Set()
-  s3?.eachRow((r, i) => i > 1 && stages.add(String(r.getCell(1).value)))
-  // (FSR 누락은 앞에서 ID 대응표로 연결해 0건)
-  check(['TSR → FSR (참조)', 'TSR → FMEA 근거', 'TSR → SSR', '역방향: SSR', '역방향: FMEA 고장원인'].every((x) => stages.has(x)) && !stages.has('FSR → TSR'), '엑셀 시트 3: 단계별 누락·확인 필요', [...stages].join(', '))
+  const rules3 = new Set()
+  s3?.eachRow((r, i) => i > 1 && rules3.add(String(r.getCell(3).value)))
+  // (FSR 누락 C-04는 앞에서 ID 대응표로 연결해 0건) — 시트 3은 검사 엔진 결과와 같음
+  check(['C-01', 'C-05', 'C-06', 'C-08', 'C-09'].every((x) => rules3.has(x)) && !rules3.has('C-04'), '엑셀 시트 3: 검사 엔진의 지적 (규칙 ID)', [...rules3].join(', '))
+
+  // ── M6 검사 결과: 오류·경고·참고, 문서별 막대, 지적 → 추적성 지도에서 강조, 검사 리포트
+  await win.locator('.menu-item', { hasText: '검사 결과' }).click()
+  await win.waitForSelector('.check-table')
+  const errPill = (await win.locator('.err-pill').innerText()).trim()
+  const errCard = (await win.locator('.check-card.sev-error .summary-value').innerText()).trim()
+  check(errPill === errCard && Number(errCard) > 0, '검사 결과: 오류 건수 카드 = 메뉴 표시', `오류 ${errCard}`)
+  const bars = await win.locator('.doc-bar-name').allInnerTexts()
+  check(bars.includes('TSC') && bars.includes('SRS'), '검사 결과: 고칠 문서별 지적 막대', bars.join(', '))
+  await win.screenshot({ path: screenshotPath.replace(/\.png$/, '-check.png') })
+  await win.locator('.doc-bar-btn', { hasText: 'SRS' }).click()
+  const srsOnly = await win.locator('.check-table tbody tr').allInnerTexts()
+  check(srsOnly.length > 0 && srsOnly.every((t) => t.includes('SRS')), '검사 결과: 막대를 누르면 그 문서의 지적만', `${srsOnly.length}건`)
+  await win.locator('.doc-bar-btn', { hasText: 'SRS' }).click()
+  await win.getByRole('button', { name: 'TSR-CTL-SG001-012 (중복 #1) 추적성에서 보기' }).click()
+  await win.waitForSelector('[data-testid="trace-map"] .map-card.selected', { timeout: 10_000 })
+  const sel = await win.locator('.map-card.selected').innerText()
+  check(sel.includes('TSR-CTL-SG001-012') && (await win.locator('.map-detail').innerText()).includes('TSR-CTL-SG001-012'), '검사 결과: 지적을 누르면 추적성 지도에서 그 항목 강조 + 상세')
+  await win.locator('.menu-item', { hasText: '검사 결과' }).click()
+  const outCheck = join(mkdtempSync(join(tmpdir(), 'fusa-export-')), 'check.xlsx')
+  await app.evaluate(({ dialog }, path) => {
+    dialog.showSaveDialog = async (...a) => {
+      globalThis.__fusaSaveDefault = (a[1] ?? a[0])?.defaultPath
+      return { canceled: false, filePath: path }
+    }
+  }, outCheck)
+  const shownCount = await win.locator('.check-table tbody tr').count()
+  await win.getByRole('button', { name: '엑셀로 저장' }).click()
+  const wbc = await readXlsx(outCheck)
+  const checkDefault = String(await app.evaluate(() => globalThis.__fusaSaveDefault))
+  check(
+    wbc.worksheets.map((w) => w.name).join(',') === '요약,지적 목록' && wbc.getWorksheet('지적 목록').rowCount - 1 === shownCount && /_검사리포트_\d{8}_\d{4}\.xlsx$/.test(checkDefault),
+    '검사 리포트: 요약 + 지적 목록 (화면과 같은 건수), 파일 이름',
+    `${wbc.getWorksheet('지적 목록').rowCount - 1}건 · ${checkDefault.split(/[\\/]/).pop()}`
+  )
 
   // ── M5: 처음 보는 양식 칸 지정 → 하드웨어 탭, SW 시험, 같은 모양 자동, 동의어
   const pick = async (paths) => {

@@ -12,11 +12,12 @@ interface Job {
   bytes: Uint8Array
   kind?: DocKind
   options?: ReadOptions
+  drmMarkers?: string[]
 }
 
 const job = workerData as Job
 try {
-  const result = job.mode === 'preview' ? previewDocument(job.fileName, job.bytes) : readDocument(job.fileName, job.bytes, job.kind, job.options)
+  const result = job.mode === 'preview' ? previewDocument(job.fileName, job.bytes, job.drmMarkers) : readDocument(job.fileName, job.bytes, job.kind, job.options)
   parentPort?.postMessage({ ok: true, result })
 } catch (error) {
   parentPort?.postMessage({ ok: false, error: error instanceof Error ? error.message : String(error) })

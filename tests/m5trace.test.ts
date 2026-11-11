@@ -8,7 +8,7 @@ import { computeSystemTrace, pendingCount } from '../src/core/trace'
 import { computeSoftwareTrace } from '../src/core/software'
 import { computeHardwareTrace } from '../src/core/hardware'
 import { buildHardwareMap, buildSoftwareMap } from '../src/core/softwareMap'
-import { collectTraceIssues } from '../src/core/issues'
+import { runChecks } from '../src/core/check'
 
 const now = '2026-05-01T00:00:00.000Z'
 const hsrRule = makeRule({ id: 'h', name: 'HSR 양식', docKind: 'HSR', format: 'xlsx', layout: 'rows', roleHeaders: { id: 'HW Req No.', ref: 'Parent TSR', title: 'Requirement', asil: 'ASIL', status: 'Status' }, now })
@@ -122,8 +122,8 @@ describe('ID 대응표·시트 3에 HSR·SW 시험 포함', () => {
     expect(computeHardwareTrace(p).hsrs.find((x) => x.item.rawId === 'HSR-015')?.refs[0].method).toBe('alias')
   })
 
-  it('시트 3 단계에 TSR → HSR, 역방향: HSR, SSR → SW 시험, 역방향: SW 시험', () => {
-    const stages = new Set(collectTraceIssues(computeSystemTrace(full), computeSoftwareTrace(full), computeHardwareTrace(full)).map((i) => i.stage))
-    for (const s of ['TSR → HSR', '역방향: HSR', 'SSR → SW 시험', '역방향: SW 시험']) expect(stages.has(s)).toBe(true)
+  it('검사: HSR 없는 H/W TSR(K-04), TSR 없는 HSR(C-11), 시험 없는 SSR(C-10)', () => {
+    const rules = new Set(runChecks(full).findings.filter((f) => f.itemId).map((f) => f.ruleId))
+    for (const r of ['K-04', 'C-11', 'C-10']) expect(rules.has(r), r).toBe(true)
   })
 })

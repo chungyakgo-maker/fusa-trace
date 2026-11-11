@@ -17,7 +17,6 @@ import {
   isAllowedUpdateUrl,
   isNewer,
   isReleaseFileUrl,
-  isReleasePageUrl,
   parseRelease,
   parseSha256Sums,
   pickAsset,
@@ -60,9 +59,9 @@ function detectVariant(): InstallVariant {
 /** 네트워크 오류를 쉬운 말로 */
 function networkError(error: unknown): string {
   const m = errorText(error)
-  if (/abort|timeout|timed out/i.test(m)) return 'GitHub 응답이 너무 늦습니다. 잠시 뒤에 다시 시도해 주세요.'
+  if (/abort|timeout|timed out/i.test(m)) return '업데이트 서버의 응답이 너무 늦습니다. 잠시 뒤에 다시 시도해 주세요.'
   if (/ERR_BLOCKED|ERR_PROXY|ERR_TUNNEL|ERR_NAME_NOT_RESOLVED|ERR_INTERNET_DISCONNECTED|ERR_CONNECTION|ERR_ADDRESS|ERR_NETWORK|ERR_CERT|ERR_SSL|fetch failed/i.test(m))
-    return `GitHub에 연결하지 못했습니다. 인터넷이 안 되거나 회사망·보안 프로그램에서 막혔을 수 있습니다. (${m.slice(0, 80)})`
+    return `업데이트 서버에 연결하지 못했습니다. 인터넷이 안 되거나 회사망·보안 프로그램에서 막혔을 수 있습니다. (${m.slice(0, 80)})`
   return m.slice(0, 200)
 }
 
@@ -121,9 +120,9 @@ export class Updater {
       headers: { Accept: 'application/vnd.github+json', 'User-Agent': `FuSaTrace/${app.getVersion()}` },
       signal: AbortSignal.timeout(timeoutMs)
     })
-    if (res.status === 404) throw new Error('GitHub에 아직 Release가 없습니다.')
-    if (res.status === 403 || res.status === 429) throw new Error('GitHub 확인 횟수 제한에 걸렸습니다. 1시간쯤 뒤에 다시 시도해 주세요.')
-    if (!res.ok) throw new Error(`GitHub 응답 오류 (${res.status})`)
+    if (res.status === 404) throw new Error('아직 올라온 버전이 없습니다.')
+    if (res.status === 403 || res.status === 429) throw new Error('업데이트 확인 횟수 제한에 걸렸습니다. 1시간쯤 뒤에 다시 시도해 주세요.')
+    if (!res.ok) throw new Error(`업데이트 서버 응답 오류 (${res.status})`)
     return res
   }
 
@@ -151,7 +150,7 @@ export class Updater {
         latest: { version: release.version, publishedAt: release.publishedAt, notes: release.notes, pageUrl: release.pageUrl, assetName: asset?.name, size: asset?.size }
       })
     } catch (error) {
-      const message = error instanceof SyntaxError ? 'GitHub 응답을 읽지 못했습니다.' : networkError(error)
+      const message = error instanceof SyntaxError ? '업데이트 서버의 응답을 읽지 못했습니다.' : networkError(error)
       log('warn', `update: check failed${auto ? ' (auto)' : ''}: ${message.slice(0, 120)}`)
       return this.set({ phase: 'error', error: message, latest: undefined, checkedAt: new Date().toISOString() })
     }
@@ -166,9 +165,9 @@ export class Updater {
       log('warn', `update: download failed: ${message.slice(0, 120)}`)
       return this.set({ phase: 'error', error: message, progress: undefined })
     }
-    if (!asset) return fail(`이 Release에 ${this.state.variant === 'setup' ? '설치형(Setup.exe)' : this.state.variant === 'portable' ? '포터블' : '압축본(zip)'} 파일이 없습니다.`)
-    if (!sums) return fail('Release에 확인값 파일(SHA256SUMS.txt)이 없어서 받지 않습니다.')
-    if (!isReleaseFileUrl(asset.url, TEST_ORIGIN) || !isReleaseFileUrl(sums.url, TEST_ORIGIN)) return fail('Release 파일 주소가 이 저장소가 아니어서 받지 않습니다.')
+    if (!asset) return fail(`새 버전에 ${this.state.variant === 'setup' ? '설치형(Setup.exe)' : this.state.variant === 'portable' ? '포터블' : '압축본(zip)'} 파일이 없습니다.`)
+    if (!sums) return fail('새 버전에 확인값 파일(SHA256SUMS.txt)이 없어서 받지 않습니다.')
+    if (!isReleaseFileUrl(asset.url, TEST_ORIGIN) || !isReleaseFileUrl(sums.url, TEST_ORIGIN)) return fail('받을 파일 주소가 허용된 곳이 아니어서 받지 않습니다.')
 
     this.set({ phase: 'downloading', progress: 0, error: undefined, savedPath: undefined })
     const dir = this.state.variant === 'setup' ? join(app.getPath('temp'), 'FuSaTrace-update') : process.env['FUSA_DOWNLOAD_DIR'] || app.getPath('downloads')
@@ -206,7 +205,7 @@ export class Updater {
       }
       if (hash.digest('hex') !== expected) {
         rmSync(partPath, { force: true })
-        return fail('받은 파일의 확인값(SHA256)이 Release에 적힌 값과 달라서 지웠습니다. 다시 시도해 주세요.')
+        return fail('받은 파일의 확인값(SHA256)이 새 버전에 적힌 값과 달라서 지웠습니다. 다시 시도해 주세요.')
       }
       rmSync(finalPath, { force: true })
       renameSync(partPath, finalPath)
@@ -257,11 +256,6 @@ export class Updater {
         error: `설치 프로그램을 실행하지 못했습니다 (보안 프로그램이 막았을 수 있습니다). [받은 파일 보기]로 폴더를 열어 직접 실행해 주세요. (${errorText(error).slice(0, 80)})`
       })
     }
-  }
-
-  async openReleasePage(): Promise<void> {
-    const url = this.state.latest?.pageUrl
-    if (url && isReleasePageUrl(url, TEST_ORIGIN) && !TEST_ORIGIN) await shell.openExternal(url)
   }
 
   showDownloaded(): void {

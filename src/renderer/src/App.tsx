@@ -11,7 +11,9 @@ import { ImportDialog, type ApplyItem } from './ImportDialog'
 import { SchedulePage } from './SchedulePage'
 import { DocumentsPage } from './DocumentsPage'
 import { SettingsPage } from './SettingsPage'
-import { TracePage } from './TracePage'
+import { TracePage, type TraceFocus } from './TracePage'
+import { CheckPage } from './CheckPage'
+import { runChecks } from '../../core/check'
 import { IdMapPage } from './IdMapPage'
 import { ProjectPicker } from './ProjectPicker'
 import { Modal, ToastProvider, useToast } from './ui'
@@ -76,6 +78,10 @@ function Shell(): ReactElement {
   const editCount = project ? countEdits(project, activeDeliverables(project)) : 0
   const hasLayout = Boolean(project && activeDocs(project, 'DIA')[0]?.dia?.layout)
   const reviewCount = useMemo(() => (project ? pendingReviewCount(project) : 0), [project])
+  /** 검사 결과의 오류 건수 (메뉴에 표시) */
+  const errorCount = useMemo(() => (project ? runChecks(project).counts.오류 : 0), [project])
+  const [traceFocus, setTraceFocus] = useState<TraceFocus | null>(null)
+  useEffect(() => setTraceFocus(null), [project?.id])
 
   const pickFiles = async (): Promise<void> => {
     const paths = await window.fusa.docs.pick()
@@ -93,6 +99,15 @@ function Shell(): ReactElement {
     setImportPaths(null)
     toast.show('ok', `문서 ${items.length}개를 반영했습니다.`)
     if (items.some((i) => i.kind === 'DIA')) setPage('schedule')
+  }
+
+  const exportCheckReport = async (): Promise<void> => {
+    if (!project) return
+    const r = await window.fusa.exportCheckReport(project)
+    if (r.ok && r.path) {
+      const path = r.path
+      toast.show('ok', '검사 리포트를 저장했습니다.', { label: '폴더 열기', run: () => void window.fusa.showInFolder(path) })
+    } else if (!r.canceled) toast.show('error', `검사 리포트 저장 실패: ${r.error}`)
   }
 
   const exportExcel = async (): Promise<void> => {
@@ -166,9 +181,22 @@ function Shell(): ReactElement {
         <ul className="menu">
           {MENU.map((item) => (
             <li key={item.id}>
-              <button type="button" className="menu-item" aria-current={item.id === page ? 'page' : undefined} onClick={() => setPage(item.id)}>
+              <button
+                type="button"
+                className="menu-item"
+                aria-current={item.id === page ? 'page' : undefined}
+                onClick={() => {
+                  setTraceFocus(null) // 검사 결과에서 온 강조는 한 번만
+                  setPage(item.id)
+                }}
+              >
                 <PageIcon id={item.id} />
                 {item.label}
+                {item.id === 'check' && errorCount > 0 && (
+                  <span className="err-pill" aria-label={`오류 ${errorCount}건`}>
+                    {errorCount}
+                  </span>
+                )}
                 {item.id === 'idmap' && reviewCount > 0 && (
                   <span className="count-pill" aria-label={`확인 필요 ${reviewCount}건`}>
                     {reviewCount}
@@ -195,7 +223,7 @@ function Shell(): ReactElement {
         )}
 
         <div className="sidebar-footer">
-          <span className="offline-badge" title="문서·프로젝트 내용은 밖으로 보내지 않습니다. 외부 접속은 업데이트 확인(GitHub)만 합니다.">
+          <span className="offline-badge" title="문서·프로젝트 내용은 밖으로 보내지 않습니다. 외부 접속은 업데이트 확인·받기만 합니다.">
             <OfflineIcon />
             외부 연결: 업데이트만
           </span>
@@ -232,7 +260,19 @@ function Shell(): ReactElement {
         )}
         {page === 'documents' && <DocumentsPage project={project} onChange={(p) => void update(p)} onImport={() => void pickFiles()} />}
         {page === 'settings' && <SettingsPage project={project} profile={profile} onChange={(p) => void update(p)} onProfile={(p) => void saveProfile(p)} />}
-        {page === 'trace' && <TracePage project={project} onImport={() => void pickFiles()} onGoIdMap={() => setPage('idmap')} />}
+        {page === 'check' && (
+          <CheckPage
+            project={project}
+            onImport={() => void pickFiles()}
+            onReport={() => void exportCheckReport()}
+            onFocus={(f) => {
+              if (!f.item || !f.tab) return
+              setTraceFocus({ tab: f.tab, item: f.item, seq: Date.now() })
+              setPage('trace')
+            }}
+          />
+        )}
+        {page === 'trace' && <TracePage project={project} focus={traceFocus} onImport={() => void pickFiles()} onGoIdMap={() => setPage('idmap')} />}
         {page === 'idmap' && <IdMapPage project={project} onChange={(p) => void update(p)} />}
       </main>
 

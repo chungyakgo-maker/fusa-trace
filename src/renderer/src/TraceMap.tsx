@@ -81,7 +81,8 @@ export function TraceMap({
   hw,
   onGoIdMap,
   title,
-  filter
+  filter,
+  focusItem
 }: {
   /** 배치 계산 (시스템·소프트웨어·하드웨어) */
   build: (opts: MapOptions) => MapLayout
@@ -94,6 +95,8 @@ export function TraceMap({
   title: string
   /** 크게 보기에서도 쓰는 거르기 (SG·묶음) */
   filter?: ReactNode
+  /** 검사 결과에서 누른 지적의 항목: 펼쳐서 고르고 그 자리로 스크롤 */
+  focusItem?: { item: TraceItem; seq: number }
 }): ReactElement {
   const [maximized, setMaximized] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -104,6 +107,16 @@ export function TraceMap({
   const layout: MapLayout = useMemo(() => build({ sg, expanded, expandAll }), [build, sg, expanded, expandAll])
   const byId = useMemo(() => new Map(layout.nodes.map((n) => [n.id, n])), [layout])
   const focus = useMemo(() => (selected && byId.has(selected) ? connectedOf(layout, selected) : null), [layout, byId, selected])
+
+  // 검사 결과에서 온 항목: 접혀 있으면 모두 펼치고 골라서 그 자리로
+  useEffect(() => {
+    if (!focusItem) return
+    const id = nodeIdOf(focusItem.item)
+    setExpandAll(true)
+    setSelected(id)
+    setScrollTo(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusItem?.seq])
 
   // 크게 보기: 창도 전체 화면으로, Esc로 닫기
   useEffect(() => {

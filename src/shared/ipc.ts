@@ -14,17 +14,19 @@ export const IPC = {
   docsRead: 'docs:read',
   docsPreview: 'docs:preview',
   exportSchedule: 'export:schedule',
+  exportCheckReport: 'export:checkReport',
   showInFolder: 'shell:showInFolder',
   appInfo: 'app:info',
   windowFullScreen: 'window:fullScreen',
   profileGet: 'profile:get',
   profileSave: 'profile:save',
+  drmMarkersGet: 'drmMarkers:get',
+  drmMarkersSave: 'drmMarkers:save',
   updateGet: 'update:get',
   updateCheck: 'update:check',
   updateDownload: 'update:download',
   updateInstall: 'update:install',
   updateSetAuto: 'update:setAuto',
-  updateOpenPage: 'update:openPage',
   updateShowFile: 'update:showFile',
   /** 앱 본체 → 화면: 업데이트 상태가 바뀜 */
   updateState: 'update:state'
@@ -76,6 +78,8 @@ export interface FusaApi {
     preview(path: string): Promise<PreviewData | { error: string }>
   }
   exportSchedule(project: Project, today: IsoDate, options: { includeTrace: boolean; includePaste?: boolean; mineOnly?: boolean }): Promise<ExportResult>
+  /** 검사 리포트 엑셀 (요약 + 지적 목록) */
+  exportCheckReport(project: Project): Promise<ExportResult>
   showInFolder(path: string): Promise<void>
   appInfo(): Promise<AppInfo>
   /** 창 전체 화면 켜기·끄기 (추적성 [크게 보기]) */
@@ -85,14 +89,18 @@ export interface FusaApi {
     get(): Promise<Profile>
     save(profile: Profile): Promise<Profile>
   }
-  /** 업데이트 (GitHub Release). 접속은 앱 본체의 업데이트 전용 연결만 함 */
+  /** DRM 파일 표식 (설정 → 문서 읽기): 이 PC의 앱 설정 파일에만 저장 */
+  drmMarkers: {
+    get(): Promise<string[]>
+    save(markers: string[]): Promise<string[]>
+  }
+  /** 업데이트 확인·받기. 접속은 앱 본체의 업데이트 전용 연결만 함 */
   update: {
     get(): Promise<UpdateState>
     check(): Promise<UpdateState>
     download(): Promise<UpdateState>
     install(): Promise<UpdateState>
     setAutoCheck(on: boolean): Promise<UpdateState>
-    openPage(): Promise<void>
     showFile(): Promise<void>
     /** 상태가 바뀔 때마다 부름. 돌려준 함수를 부르면 그만 받음 */
     onState(callback: (state: UpdateState) => void): () => void

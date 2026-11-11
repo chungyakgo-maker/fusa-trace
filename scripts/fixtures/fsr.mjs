@@ -17,7 +17,7 @@ function sgFsrs(sg) {
   return rows
 }
 
-function header(ws, r, c0) {
+export function header(ws, r, c0) {
   const h = ['ID_FSR', '내용', null, 'ID_SafeState', 'ASIL', 'FTTI/EOTI\n[ms]', 'Acceptance\nCriteria', 'Allocation']
   h.forEach((v, i) => {
     if (v !== null) ws.getCell(r, c0 + i).value = v
@@ -25,7 +25,7 @@ function header(ws, r, c0) {
   ws.mergeCells(r, c0 + 1, r, c0 + 2) // 내용 칸 가로 병합
 }
 
-function writeRows(ws, r, c0, rows) {
+export function writeRows(ws, r, c0, rows) {
   for (const row of rows) {
     const [id, text, ss, asil, ftti, acc, alloc] = row
     ws.getCell(r, c0).value = id

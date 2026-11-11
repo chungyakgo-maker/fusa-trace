@@ -7,7 +7,7 @@ const pad = (n) => String(n).padStart(3, '0')
 const ELEMENTS = ['Power Control (Element 1)\n전원 제어부', 'Signal Input (Element 2)\n입력부', 'MCU (Element 3)\n연산부']
 
 /** 그룹 줄(2행) + 영문 줄(3행) + 한글 줄(4행). withTsr=false면 TSR ID·ASIL 칸 없는 옛 양식 */
-function headers(ws, withTsr) {
+export function headers(ws, withTsr) {
   const groups = [
     ['A2:C2', 'STRUCTURE ANALYSIS (STEP2)'],
     ['D2:F2', 'FUNCTION ANALYSIS (STEP 3)'],
@@ -64,7 +64,7 @@ function causeRowsSg2() {
   return rows
 }
 
-function fmeaSheet(wb, name, rows, withTsr) {
+export function fmeaSheet(wb, name, rows, withTsr) {
   const ws = wb.addWorksheet(name)
   ws.getCell('A1').value = `${name} — 가짜 FMEA`
   headers(ws, withTsr)

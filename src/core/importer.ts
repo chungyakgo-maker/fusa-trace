@@ -57,8 +57,8 @@ export function detectDocxKinds(doc: DocxDocument): DocKind[] {
 
 type Opened = { wb?: Workbook; doc?: DocxDocument } | { error: ReadResult }
 
-function openDocument(fileName: string, bytes: Uint8Array): Opened {
-  const sniff = sniffFile(bytes)
+function openDocument(fileName: string, bytes: Uint8Array, drmMarkers: readonly string[] = []): Opened {
+  const sniff = sniffFile(bytes, drmMarkers)
   if (sniff === 'DRM') return { error: fail(fileName, 'DRM', DRM_MESSAGE) }
   if (sniff === 'UNKNOWN') return { error: fail(fileName, 'UNREADABLE', UNREADABLE_MESSAGE) }
   if (sniff === 'OLE' && fileExtension(fileName) === 'doc') {
@@ -72,9 +72,9 @@ function openDocument(fileName: string, bytes: Uint8Array): Opened {
   }
 }
 
-/** 칸 지정 화면용 미리보기 */
-export function previewDocument(fileName: string, bytes: Uint8Array): PreviewData | { error: string } {
-  const o = openDocument(fileName, bytes)
+/** 칸 지정 화면용 미리보기. drmMarkers: 설정 → 문서 읽기의 DRM 파일 표식 */
+export function previewDocument(fileName: string, bytes: Uint8Array, drmMarkers: readonly string[] = []): PreviewData | { error: string } {
+  const o = openDocument(fileName, bytes, drmMarkers)
   if ('error' in o) return { error: o.error.error ?? UNREADABLE_MESSAGE }
   return o.wb ? previewWorkbook(o.wb) : previewDocx(o.doc!)
 }
@@ -91,7 +91,7 @@ function readWithRule(fileName: string, rule: ReadRule, wb: Workbook | undefined
 export function readDocument(fileName: string, bytes: Uint8Array, forcedKind?: DocKind, options: ReadOptions = {}): ReadResult {
   setExtraSynonyms(options.synonyms)
   const rules = options.rules ?? []
-  const sniff = sniffFile(bytes)
+  const sniff = sniffFile(bytes, options.drmMarkers)
   if (sniff === 'DRM') return fail(fileName, 'DRM', DRM_MESSAGE)
   if (sniff === 'UNKNOWN') return fail(fileName, 'UNREADABLE', UNREADABLE_MESSAGE)
 
@@ -100,7 +100,7 @@ export function readDocument(fileName: string, bytes: Uint8Array, forcedKind?: D
     return registerOnly(fileName, 'VR', ['VR'])
   }
 
-  const opened = openDocument(fileName, bytes)
+  const opened = openDocument(fileName, bytes, options.drmMarkers)
   if ('error' in opened) return opened.error
   const { wb, doc } = opened
 

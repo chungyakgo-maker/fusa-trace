@@ -12,6 +12,7 @@ import { makeTscFiles } from './fixtures/tsc.mjs'
 import { makeFmeaFiles } from './fixtures/fmea.mjs'
 import { makeSrsFiles } from './fixtures/srs.mjs'
 import { makeNewFormFiles } from './fixtures/newforms.mjs'
+import { makeCheckFiles } from './fixtures/check.mjs'
 import { docx, para, table } from './fixtures/docx.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -161,8 +162,9 @@ function makeXlsVr(fileName) {
   writeFileSync(join(OUT, fileName), buf)
 }
 
+// 가짜 DRM 파일: 앞부분에 가짜 표식 FAKEDRM (실제 표식은 사용자가 설정에 입력. 테스트는 FAKEDRM을 표식으로 넣고 확인)
 function makeDrm(fileName) {
-  const head = Buffer.from('#DRM DocuRay v4 fake header....', 'ascii')
+  const head = Buffer.from('#DRM FAKEDRM v4 fake header....', 'ascii')
   const body = Buffer.alloc(4096)
   for (let i = 0; i < body.length; i++) body[i] = (i * 31 + 7) % 256
   writeFileSync(join(OUT, fileName), Buffer.concat([head, body]))
@@ -193,6 +195,7 @@ export async function makeAll() {
   await makeFmeaFiles(OUT)
   await makeSrsFiles(OUT)
   await makeNewFormFiles(OUT)
+  await makeCheckFiles(OUT)
 
   console.log(`가짜 문서 생성 완료: ${OUT} (${Date.now() - started}ms)`)
 }

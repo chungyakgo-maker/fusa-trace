@@ -23,6 +23,7 @@ const api: FusaApi = {
     preview: (path) => ipcRenderer.invoke(IPC.docsPreview, path)
   },
   exportSchedule: (project, today, options) => ipcRenderer.invoke(IPC.exportSchedule, project, today, options),
+  exportCheckReport: (project) => ipcRenderer.invoke(IPC.exportCheckReport, project),
   showInFolder: (path) => ipcRenderer.invoke(IPC.showInFolder, path),
   appInfo: () => ipcRenderer.invoke(IPC.appInfo),
   setFullScreen: (on) => ipcRenderer.invoke(IPC.windowFullScreen, on),
@@ -30,13 +31,16 @@ const api: FusaApi = {
     get: () => ipcRenderer.invoke(IPC.profileGet),
     save: (profile) => ipcRenderer.invoke(IPC.profileSave, profile)
   },
+  drmMarkers: {
+    get: () => ipcRenderer.invoke(IPC.drmMarkersGet),
+    save: (markers) => ipcRenderer.invoke(IPC.drmMarkersSave, markers)
+  },
   update: {
     get: () => ipcRenderer.invoke(IPC.updateGet),
     check: () => ipcRenderer.invoke(IPC.updateCheck),
     download: () => ipcRenderer.invoke(IPC.updateDownload),
     install: () => ipcRenderer.invoke(IPC.updateInstall),
     setAutoCheck: (on) => ipcRenderer.invoke(IPC.updateSetAuto, on),
-    openPage: () => ipcRenderer.invoke(IPC.updateOpenPage),
     showFile: () => ipcRenderer.invoke(IPC.updateShowFile),
     onState: (callback) => {
       const listener = (_e: Electron.IpcRendererEvent, state: Parameters<typeof callback>[0]): void => callback(state)

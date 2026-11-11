@@ -5,6 +5,7 @@
  * - TSR 참조는 `Functional Safety Related`에서 뽑음 (`Yes (TSR-017, …)`, `Yes`, `No`, 빈칸, `-`)
  * - 참조 문서 표 등 다른 표는 무시
  */
+import { shortHeading } from './tsc'
 import type { ImportReport, TraceItem } from './model'
 import { emptyReport } from './model'
 import type { DocxDocument } from './docx'
@@ -50,13 +51,17 @@ export function parseSrs(doc: DocxDocument): SrsParseResult {
   const report = emptyReport()
   const items: TraceItem[] = []
   let heading2 = ''
+  let lastHeading = ''
+  let reqTables = 0
   let constraints = 0
   for (const b of doc.blocks) {
     if (b.type === 'heading') {
       if (b.level === 2) heading2 = b.text
+      lastHeading = b.text
       continue
     }
     if (!isSrsTable(b.rows)) continue
+    reqTables++
     const v: Record<string, string> = {}
     const extra: Record<string, string> = {}
     for (const row of b.rows.slice(1)) {
@@ -65,7 +70,7 @@ export function parseSrs(doc: DocxDocument): SrsParseResult {
       if (key) v[key] = value
       else if (row[0]?.trim()) extra[row[0].trim()] = value
     }
-    const where = `표 ${b.index}`
+    const where = `${reqTables}번째 요구사항 표 (표 ${b.index})${lastHeading ? ` · ${shortHeading(lastHeading)}` : ''}`
     const id = (v.id ?? '').trim()
     if (!id || /no separate identifier/i.test(id)) {
       constraints++

@@ -1,5 +1,5 @@
 /** 추적성 (SPEC §9.1): 시스템 / 소프트웨어 / 하드웨어 탭. 단계 카드 + 추적성(지도) 보기 / 목록 보기. 지도는 [크게 보기]로 화면 가득 */
-import { Fragment, useCallback, useMemo, useState, type ReactElement } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import type { Project, TraceItem } from '../../core/model'
 import { computeSystemTrace, TRACE_STATUSES, type FsrRow, type StageCard, type SystemTrace, type TraceStatus, type TsrRow } from '../../core/trace'
 import { ORIGIN_LABEL } from '../../core/fsr'
@@ -67,8 +67,20 @@ export function StageCards({ cards }: { cards: StageCard[] }): ReactElement {
 
 const STATUS_ORDER: Record<TraceStatus, number> = { 누락: 0, '확인 필요': 1, 연결됨: 2, '문서 대기': 3, '대상 아님': 4 }
 
-export function TracePage({ project, onImport, onGoIdMap }: { project: Project; onImport: () => void; onGoIdMap: () => void }): ReactElement {
-  const [tab, setTab] = useState<Tab>('system')
+/** 검사 결과에서 지적을 눌렀을 때: 이 탭의 지도에서 이 항목을 강조 */
+export interface TraceFocus {
+  tab: Tab
+  item: TraceItem
+  /** 같은 항목을 다시 눌러도 다시 강조하도록 */
+  seq: number
+}
+
+export function TracePage({ project, focus, onImport, onGoIdMap }: { project: Project; focus?: TraceFocus | null; onImport: () => void; onGoIdMap: () => void }): ReactElement {
+  const [tab, setTab] = useState<Tab>(focus?.tab ?? 'system')
+  useEffect(() => {
+    if (focus) setTab(focus.tab)
+  }, [focus])
+  const focusFor = (t: Tab): TraceFocus | undefined => (focus && focus.tab === t ? focus : undefined)
   const trace = useMemo(() => computeSystemTrace(project), [project])
   const sw = useMemo(() => computeSoftwareTrace(project), [project])
   const hw = useMemo(() => computeHardwareTrace(project), [project])
@@ -84,15 +96,15 @@ export function TracePage({ project, onImport, onGoIdMap }: { project: Project; 
         ))}
       </div>
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
-        {tab === 'system' && <SystemTab trace={trace} sw={sw} hw={hw} onImport={onImport} onGoIdMap={onGoIdMap} />}
-        {tab === 'software' && <SoftwareTab sys={trace} sw={sw} hw={hw} onImport={onImport} onGoIdMap={onGoIdMap} />}
-        {tab === 'hardware' && <HardwareTab sys={trace} sw={sw} hw={hw} onImport={onImport} onGoIdMap={onGoIdMap} />}
+        {tab === 'system' && <SystemTab trace={trace} sw={sw} hw={hw} onImport={onImport} onGoIdMap={onGoIdMap} focus={focusFor('system')} />}
+        {tab === 'software' && <SoftwareTab sys={trace} sw={sw} hw={hw} onImport={onImport} onGoIdMap={onGoIdMap} focus={focusFor('software')} />}
+        {tab === 'hardware' && <HardwareTab sys={trace} sw={sw} hw={hw} onImport={onImport} onGoIdMap={onGoIdMap} focus={focusFor('hardware')} />}
       </div>
     </div>
   )
 }
 
-function SystemTab({ trace, sw, hw, onImport, onGoIdMap }: { trace: SystemTrace; sw: SoftwareTrace; hw: HardwareTrace; onImport: () => void; onGoIdMap: () => void }): ReactElement {
+function SystemTab({ trace, sw, hw, onImport, onGoIdMap, focus }: { trace: SystemTrace; sw: SoftwareTrace; hw: HardwareTrace; onImport: () => void; onGoIdMap: () => void; focus?: TraceFocus }): ReactElement {
   const [sg, setSg] = useState('전체')
   const [status, setStatus] = useState<TraceStatus | '전체'>('전체')
   const [view, setView] = useState<'map' | 'list'>('map')
@@ -181,6 +193,7 @@ function SystemTab({ trace, sw, hw, onImport, onGoIdMap }: { trace: SystemTrace;
             hw={hw}
             sg={sg === '전체' ? 'all' : sg === '(SG 없음)' ? UNKNOWN_BLOCK : sg}
             onGoIdMap={onGoIdMap}
+            focusItem={focus}
             title="추적성 — 시스템 (FSR → TSR → FMEA 근거)"
             filter={sgSelect}
           />
@@ -389,7 +402,7 @@ function swBlockOf(item: TraceItem): string {
   return n !== undefined ? `SG${String(n).padStart(3, '0')}` : GENERAL_BLOCK
 }
 
-function SoftwareTab({ sys, sw, hw, onImport, onGoIdMap }: { sys: SystemTrace; sw: SoftwareTrace; hw: HardwareTrace; onImport: () => void; onGoIdMap: () => void }): ReactElement {
+function SoftwareTab({ sys, sw, hw, onImport, onGoIdMap, focus }: { sys: SystemTrace; sw: SoftwareTrace; hw: HardwareTrace; onImport: () => void; onGoIdMap: () => void; focus?: TraceFocus }): ReactElement {
   const [block, setBlock] = useState('전체')
   const [view, setView] = useState<'map' | 'list'>('map')
   const [status, setStatus] = useState<TraceStatus | '전체'>('전체')
@@ -466,7 +479,7 @@ function SoftwareTab({ sys, sw, hw, onImport, onGoIdMap }: { sys: SystemTrace; s
           </div>
         </div>
         {view === 'map' ? (
-          <TraceMap build={build} sys={sys} sw={sw} hw={hw} sg={block === '전체' ? 'all' : block} onGoIdMap={onGoIdMap} title="추적성 — 소프트웨어 (TSR → SSR → SW 시험)" filter={blockSelect} />
+          <TraceMap build={build} sys={sys} sw={sw} hw={hw} sg={block === '전체' ? 'all' : block} onGoIdMap={onGoIdMap} focusItem={focus} title="추적성 — 소프트웨어 (TSR → SSR → SW 시험)" filter={blockSelect} />
         ) : (
           <div className="table-scroll">
             <table className="trace-table">
@@ -648,7 +661,7 @@ function SoftwareTab({ sys, sw, hw, onImport, onGoIdMap }: { sys: SystemTrace; s
   )
 }
 
-function HardwareTab({ sys, sw, hw, onImport, onGoIdMap }: { sys: SystemTrace; sw: SoftwareTrace; hw: HardwareTrace; onImport: () => void; onGoIdMap: () => void }): ReactElement {
+function HardwareTab({ sys, sw, hw, onImport, onGoIdMap, focus }: { sys: SystemTrace; sw: SoftwareTrace; hw: HardwareTrace; onImport: () => void; onGoIdMap: () => void; focus?: TraceFocus }): ReactElement {
   const [block, setBlock] = useState('전체')
   const [view, setView] = useState<'map' | 'list'>('map')
   const build = useCallback((o: MapOptions) => buildHardwareMap(hw, o), [hw])
@@ -702,7 +715,7 @@ function HardwareTab({ sys, sw, hw, onImport, onGoIdMap }: { sys: SystemTrace; s
             </div>
           </div>
           {view === 'map' ? (
-            <TraceMap build={build} sys={sys} sw={sw} hw={hw} sg={block === '전체' ? 'all' : block} onGoIdMap={onGoIdMap} title="추적성 — 하드웨어 (TSR → HSR → FMEDA)" filter={hwBlockSelect} />
+            <TraceMap build={build} sys={sys} sw={sw} hw={hw} sg={block === '전체' ? 'all' : block} onGoIdMap={onGoIdMap} focusItem={focus} title="추적성 — 하드웨어 (TSR → HSR → FMEDA)" filter={hwBlockSelect} />
           ) : (
             <div className="table-scroll">
               <table className="trace-table">

@@ -106,7 +106,7 @@ function statusText(s: UpdateState): string {
     case 'idle':
       return s.autoCheck ? '확인 대기 중 (앱을 켜고 몇 초 뒤 자동으로 확인합니다)' : '아직 확인하지 않았습니다.'
     case 'checking':
-      return 'GitHub에서 확인하는 중…'
+      return '확인하는 중…'
     case 'latest':
       return `최신 버전입니다 (v${s.current})${when}`
     case 'available':
@@ -150,11 +150,6 @@ export function UpdateSection(): ReactElement {
           버전 확인
         </button>
         <UpdateActions state={state} />
-        {state.latest && (
-          <button type="button" className="link-btn" onClick={() => void api.openPage()}>
-            Release 페이지 열기 (브라우저)
-          </button>
-        )}
       </div>
       {state.latest?.notes && (
         <Disclosure summary={`v${state.latest.version} 설명 보기`}>
@@ -166,10 +161,9 @@ export function UpdateSection(): ReactElement {
         앱을 켤 때 새 버전 자동 확인
       </label>
       <p className="muted small">
-        업데이트를 확인하거나 받을 때만 GitHub에 접속합니다. 보내는 것은 앱 버전뿐이고, 문서·프로젝트 내용은 보내지 않습니다. 받은 파일은 Release에 적힌 확인값(SHA256)과 맞을 때만 씁니다.
         {state.variant === 'setup'
-          ? ' 설치형은 받은 뒤 조용히 덮어 설치하고 앱을 다시 켭니다.'
-          : ' 포터블·압축본은 실행 중인 파일을 바꿀 수 없어서 다운로드 폴더에 새 파일을 받아 드립니다.'}
+          ? '설치형은 받은 뒤 조용히 덮어 설치하고 앱을 다시 켭니다.'
+          : '포터블·압축본은 실행 중인 파일을 바꿀 수 없어서 다운로드 폴더에 새 파일을 받아 드립니다.'}
       </p>
     </section>
   )

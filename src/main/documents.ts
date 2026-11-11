@@ -15,7 +15,7 @@ const MAX_SIZE = 300 * 1024 * 1024
 type WorkerReply<T> = { ok: true; result: T } | { ok: false; error: string }
 type ReadReply = WorkerReply<Omit<ParsedDocument, 'path' | 'hash' | 'size' | 'elapsedMs'>>
 
-function runWorker<T>(job: { mode: 'read' | 'preview'; fileName: string; bytes: Uint8Array; kind?: ReadRequest['kind']; options?: ReadOptions }): Promise<WorkerReply<T>> {
+function runWorker<T>(job: { mode: 'read' | 'preview'; fileName: string; bytes: Uint8Array; kind?: ReadRequest['kind']; options?: ReadOptions; drmMarkers?: string[] }): Promise<WorkerReply<T>> {
   return new Promise((resolve) => {
     const worker = createImportWorker({ workerData: job })
     const timer = setTimeout(() => {
@@ -34,10 +34,10 @@ function runWorker<T>(job: { mode: 'read' | 'preview'; fileName: string; bytes: 
   })
 }
 
-export async function previewFile(path: string): Promise<PreviewData | { error: string }> {
+export async function previewFile(path: string, drmMarkers: string[] = []): Promise<PreviewData | { error: string }> {
   try {
     const buf = await readFile(path)
-    const reply = await runWorker<PreviewData | { error: string }>({ mode: 'preview', fileName: basename(path), bytes: new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength) })
+    const reply = await runWorker<PreviewData | { error: string }>({ mode: 'preview', fileName: basename(path), bytes: new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength), drmMarkers })
     return reply.ok ? reply.result : { error: reply.error }
   } catch (error) {
     return { error: `파일을 열 수 없습니다: ${error instanceof Error ? error.message : String(error)}` }

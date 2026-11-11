@@ -54,15 +54,24 @@ function readVersion(doc: DocxDocument): string {
   return ''
 }
 
+/** 제목이 길면 앞부분만 */
+export function shortHeading(text: string, max = 40): string {
+  const t = text.replace(/\s+/g, ' ').trim()
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t
+}
+
 export function parseTsc(doc: DocxDocument): TscParseResult {
   const report = emptyReport()
   const items: TraceItem[] = []
   let heading2 = ''
+  /** 가장 가까운 제목 (위치 표시용) */
+  let lastHeading = ''
   let tsrTables = 0
 
   for (const block of doc.blocks) {
     if (block.type === 'heading') {
       if (block.level === 2) heading2 = block.text
+      lastHeading = block.text
       continue
     }
     const rows = block.rows
@@ -81,7 +90,8 @@ export function parseTsc(doc: DocxDocument): TscParseResult {
       // 값 행: 빈 행은 건너뜀
       let v = i + 1
       while (v < rows.length && rows[v].every((c) => !c.trim())) v++
-      const where = `표 ${block.index}${rows.filter(isTsrHeader).length > 1 ? ` (${i + 1}행)` : ''}`
+      // 위치: n번째 TSR 표 (문서의 표 번호) + 가장 가까운 제목 — SPEC 검사 규칙 §위치
+      const where = `${tsrTables}번째 TSR 표 (표 ${block.index}${rows.filter(isTsrHeader).length > 1 ? `, ${i + 1}행` : ''})${lastHeading ? ` · ${shortHeading(lastHeading)}` : ''}`
       if (v >= rows.length || isTsrHeader(rows[v])) {
         report.skipped.push({ where, message: 'TSR 머리글 아래에 값 행이 없습니다' })
         continue

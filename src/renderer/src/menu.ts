@@ -1,6 +1,6 @@
-/** 왼쪽 메뉴 (SPEC §9 공통 레이아웃 순서) */
+/** 왼쪽 메뉴 (SPEC §9 공통 레이아웃 순서). 검사 결과 = M6 추가 (첫 화면·메뉴 재배치는 M8) */
 
-export type PageId = 'trace' | 'schedule' | 'idmap' | 'documents' | 'settings'
+export type PageId = 'check' | 'trace' | 'schedule' | 'idmap' | 'documents' | 'settings'
 
 export interface MenuItem {
   id: PageId
@@ -12,6 +12,12 @@ export interface MenuItem {
 }
 
 export const MENU: readonly MenuItem[] = [
+  {
+    id: 'check',
+    label: '검사 결과',
+    summary: '넣은 문서에서 추적성 연결이 끊긴 곳을 규칙으로 찾아, 고칠 문서·위치·근거 조항과 함께 보여 줍니다.',
+    milestone: 'M6'
+  },
   {
     id: 'trace',
     label: '추적성',

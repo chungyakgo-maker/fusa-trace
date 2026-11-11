@@ -16,7 +16,7 @@ function tsr(spec) {
 }
 
 /** TSR 표의 행들 */
-function tsrRows(t) {
+export function tsrRows(t) {
   const rows = [
     ['Ref ID', 'TSR ID', 'Technical Safety Requirements', '분류', 'ASIL', 'Allocation'],
     [t.ref, t.id, t.text, t.cls, t.asil, t.alloc]
@@ -27,7 +27,7 @@ function tsrRows(t) {
   return rows
 }
 
-function attrsFor(i, opts = {}) {
+export function attrsFor(i, opts = {}) {
   const alt = i % 3 === 0
   const a = []
   if (!opts.noElement) a.push([alt ? 'Name of Functional Block' : 'Element', i % 2 ? 'MCU [ELE-009]' : 'General'])

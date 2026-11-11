@@ -5,7 +5,7 @@ import { computeSystemTrace, pendingCount } from '../src/core/trace'
 import { computeSoftwareTrace } from '../src/core/software'
 import { buildTraceMap } from '../src/core/traceMap'
 import { buildSoftwareMap, NO_TSR_BLOCK } from '../src/core/softwareMap'
-import { collectTraceIssues } from '../src/core/issues'
+import { runChecks } from '../src/core/check'
 import { buildScheduleXlsx, SHEET_TRACE } from '../src/core/export'
 
 let p = importInto(demoProject(), `${P}_FSR_R01.xlsx`)
@@ -141,18 +141,21 @@ describe('지도 (M4)', () => {
   })
 })
 
-describe('엑셀 시트 3 "추적성 누락"', () => {
-  it('누락·확인 필요 목록 (단계, 항목 ID, 제목, 문제 종류, 출처 문서)', async () => {
-    const issues = collectTraceIssues(sys, sw)
-    expect(issues.find((i) => i.id === 'FSR.001.011')).toMatchObject({ stage: 'FSR → TSR', problem: '누락: TSR 없음' })
-    expect(issues.find((i) => i.stage === 'TSR → FMEA 근거' && i.id === 'TSR-CTL-SG001-029')?.problem).toBe('누락: FMEA 근거 없음')
-    expect(issues.find((i) => i.stage === '역방향: SSR' && i.id === 'FS_SSR-100003')?.problem).toContain('Yes인데')
-    expect(issues.find((i) => i.id === 'FSR.001.011')?.source).toContain('FSR_R01.xlsx')
+describe('엑셀 시트 3 "추적성 누락" (검사 엔진 결과)', () => {
+  it('검사 결과 화면·검사 리포트와 같은 지적 목록', async () => {
+    const q = importInto(p, `${P}_DIA_R1.xlsx`)
+    const findings = runChecks(q).findings
+    expect(findings.find((f) => f.itemId === 'FSR.001.011')).toMatchObject({ ruleId: 'C-04', severity: '오류', fixDoc: 'TSC' })
+    expect(findings.find((f) => f.itemId === 'TSR-CTL-SG001-029' && f.ruleId === 'C-06')).toBeTruthy()
+    expect(findings.find((f) => f.itemId === 'FS_SSR-100003')?.ruleId).toBe('C-09')
+    expect(findings.find((f) => f.itemId === 'FSR.001.011')?.fixFile).toContain('FSR_R01.xlsx')
 
     const with3 = new ExcelJS.Workbook()
-    await with3.xlsx.load(Buffer.from(await buildScheduleXlsx(importInto(p, `${P}_DIA_R1.xlsx`), '2026-05-15', '2026-05-16', { includeTrace: true })) as unknown as ExcelJS.Buffer)
+    await with3.xlsx.load(Buffer.from(await buildScheduleXlsx(q, '2026-05-15', '2026-05-16', { includeTrace: true })) as unknown as ExcelJS.Buffer)
     expect(with3.worksheets.map((w) => w.name)).toEqual(['작성 리스트', '담당자별 요약', SHEET_TRACE])
-    expect(with3.getWorksheet(SHEET_TRACE)!.rowCount).toBe(issues.length + 1)
+    const s3 = with3.getWorksheet(SHEET_TRACE)!
+    expect(s3.rowCount).toBe(findings.length + 1)
+    expect(s3.getRow(1).values).toContain('규칙 ID')
     const without = new ExcelJS.Workbook()
     await without.xlsx.load(Buffer.from(await buildScheduleXlsx(p, '2026-05-15', '2026-05-16')) as unknown as ExcelJS.Buffer)
     expect(without.worksheets).toHaveLength(2)

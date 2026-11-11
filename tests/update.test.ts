@@ -3,7 +3,6 @@ import {
   isAllowedUpdateUrl,
   isNewer,
   isReleaseFileUrl,
-  isReleasePageUrl,
   parseRelease,
   parseSha256Sums,
   parseVersion,
@@ -75,11 +74,9 @@ describe('업데이트: 접속 허용 범위', () => {
     expect(isAllowedUpdateUrl('https://api.github.com.evil.test/')).toBe(false)
     expect(isAllowedUpdateUrl('not a url')).toBe(false)
   })
-  it('받을 파일·열 페이지는 이 저장소의 Release만', () => {
+  it('받을 파일은 이 저장소의 Release만', () => {
     expect(isReleaseFileUrl(dl('a.exe'))).toBe(true)
     expect(isReleaseFileUrl('https://github.com/someone/else/releases/download/v1/a.exe')).toBe(false)
-    expect(isReleasePageUrl(apiJson.html_url)).toBe(true)
-    expect(isReleasePageUrl('https://github.com/')).toBe(false)
   })
   it('테스트 주소는 내 PC의 http만 받아들임', () => {
     expect(testOverrideOrigin('http://127.0.0.1:5555/latest')).toBe('http://127.0.0.1:5555')

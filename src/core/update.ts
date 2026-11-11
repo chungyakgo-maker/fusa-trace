@@ -71,7 +71,7 @@ export function parseRelease(json: unknown): ReleaseInfo {
   const r = json as Record<string, unknown> | null
   const tag = typeof r?.tag_name === 'string' ? r.tag_name : ''
   const v = parseVersion(tag)
-  if (!r || !v) throw new Error('GitHub Release 정보의 모양이 예상과 다릅니다')
+  if (!r || !v) throw new Error('업데이트 정보의 모양이 예상과 다릅니다')
   const assets: ReleaseAsset[] = Array.isArray(r.assets)
     ? r.assets.flatMap((a) => {
         const x = a as Record<string, unknown>
@@ -137,8 +137,3 @@ export function isReleaseFileUrl(url: string, overrideOrigin?: string): boolean 
   return url.startsWith(DOWNLOAD_PREFIX)
 }
 
-/** 브라우저로 열어도 되는 Release 페이지 주소 */
-export function isReleasePageUrl(url: string, overrideOrigin?: string): boolean {
-  if (overrideOrigin && url.startsWith(`${overrideOrigin}/`)) return true
-  return url.startsWith(RELEASE_PAGE_PREFIX)
-}

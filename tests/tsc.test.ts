@@ -18,7 +18,11 @@ describe('TSC 읽기 (FORMATS §5, §9 TSC)', () => {
   })
 
   it('한 표 안에 TSR 2개 (사이 빈 행)', () => {
-    expect(tsr('TSR-CTL-SG001-007').location).toBe(tsr('TSR-CTL-SG001-008').location.replace(/ \(\d+행\)$/, '') + ' (1행)')
+    const a = tsr('TSR-CTL-SG001-007').location
+    const b = tsr('TSR-CTL-SG001-008').location
+    expect(a).toMatch(/^\d+번째 TSR 표 \(표 \d+, 1행\)/) // 위치: n번째 TSR 표 (문서 표 번호, 행) · 가장 가까운 제목
+    expect(a.replace(/, \d+행\)/, ')')).toBe(b.replace(/, \d+행\)/, ')'))
+    expect(a).toContain(' · ')
     expect(tsr('TSR-CTL-SG001-008').refs).toEqual(['FSR.001.008'])
   })
 

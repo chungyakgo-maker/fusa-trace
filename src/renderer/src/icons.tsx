@@ -185,6 +185,13 @@ export const FolderIcon = ({ size = 16 }: { size?: number }): ReactElement => (
 )
 
 const PAGE_ICONS: Record<PageId, ReactElement> = {
+  check: (
+    <Icon>
+      <path d="M9 3h6a1 1 0 0 1 1 1v1H8V4a1 1 0 0 1 1-1z" />
+      <path d="M16 5h2a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" />
+      <polyline points="9 14 11 16 15 12" />
+    </Icon>
+  ),
   trace: (
     <Icon>
       <circle cx="18" cy="5" r="3" />
